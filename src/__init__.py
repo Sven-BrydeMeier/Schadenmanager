@@ -1,0 +1,1 @@
+# Schadenmanager - Verkehrsunfall-Abwicklungs-App

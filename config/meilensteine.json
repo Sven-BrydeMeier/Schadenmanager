@@ -1,0 +1,247 @@
+{
+  "meilensteine": [
+    {
+      "code": "BASISDATEN",
+      "beschreibung": "Basisdaten erfasst",
+      "reihenfolge": 1,
+      "partei_zustaendig": ["WERKSTATT", "ANWALT", "GUTACHTER"],
+      "regeln": {
+        "gruen": {
+          "bedingung": "projekt.kfz_eigen_id IS NOT NULL AND projekt.datum_unfall IS NOT NULL",
+          "beschreibung": "Fahrzeug und Unfalldatum sind erfasst"
+        },
+        "orange": {
+          "bedingung": "projekt.kfz_eigen_id IS NOT NULL OR projekt.datum_unfall IS NOT NULL",
+          "beschreibung": "Teilweise Daten erfasst"
+        },
+        "rot": {
+          "bedingung": "DEFAULT",
+          "beschreibung": "Keine Basisdaten erfasst"
+        }
+      }
+    },
+    {
+      "code": "UNFALLOPFER_REGISTRIERT",
+      "beschreibung": "Unfallopfer registriert",
+      "reihenfolge": 2,
+      "partei_zustaendig": ["UNFALLOPFER"],
+      "regeln": {
+        "gruen": {
+          "bedingung": "projekt.unfallopfer_user_id IS NOT NULL AND user.zwei_faktor_aktiviert = TRUE",
+          "beschreibung": "Unfallopfer registriert mit 2FA"
+        },
+        "orange": {
+          "bedingung": "projekt.unfallopfer_user_id IS NOT NULL",
+          "beschreibung": "Unfallopfer registriert, 2FA ausstehend"
+        },
+        "rot": {
+          "bedingung": "DEFAULT",
+          "beschreibung": "Einladung ausstehend"
+        }
+      }
+    },
+    {
+      "code": "FAHRZEUGSCHEIN_ERFASST",
+      "beschreibung": "Fahrzeugschein erfasst",
+      "reihenfolge": 3,
+      "partei_zustaendig": ["UNFALLOPFER", "WERKSTATT"],
+      "regeln": {
+        "gruen": {
+          "bedingung": "dokument.typ = 'FAHRZEUGSCHEIN' AND dokument.ki_verarbeitet = TRUE",
+          "beschreibung": "Fahrzeugschein hochgeladen und verarbeitet"
+        },
+        "orange": {
+          "bedingung": "dokument.typ = 'FAHRZEUGSCHEIN' AND dokument.ocr_verarbeitet = TRUE",
+          "beschreibung": "Fahrzeugschein hochgeladen, KI-Verarbeitung ausstehend"
+        },
+        "rot": {
+          "bedingung": "DEFAULT",
+          "beschreibung": "Fahrzeugschein nicht hochgeladen"
+        }
+      }
+    },
+    {
+      "code": "GUTACHTER_BEAUFTRAGT",
+      "beschreibung": "Gutachter beauftragt",
+      "reihenfolge": 4,
+      "partei_zustaendig": ["ANWALT", "WERKSTATT"],
+      "regeln": {
+        "gruen": {
+          "bedingung": "projekt.gutachter_user_id IS NOT NULL",
+          "beschreibung": "Gutachter zugewiesen"
+        },
+        "orange": {
+          "bedingung": "FALSE",
+          "beschreibung": "-"
+        },
+        "rot": {
+          "bedingung": "DEFAULT",
+          "beschreibung": "Kein Gutachter zugewiesen"
+        }
+      }
+    },
+    {
+      "code": "GUTACHTEN_EINGEGANGEN",
+      "beschreibung": "Gutachten eingegangen",
+      "reihenfolge": 5,
+      "partei_zustaendig": ["GUTACHTER"],
+      "regeln": {
+        "gruen": {
+          "bedingung": "dokument.typ = 'GUTACHTEN' AND dokument.status = 'VERARBEITET'",
+          "beschreibung": "Gutachten hochgeladen und verarbeitet"
+        },
+        "orange": {
+          "bedingung": "dokument.typ = 'GUTACHTEN'",
+          "beschreibung": "Gutachten hochgeladen, Verarbeitung ausstehend"
+        },
+        "rot": {
+          "bedingung": "DEFAULT",
+          "beschreibung": "Kein Gutachten vorhanden"
+        }
+      }
+    },
+    {
+      "code": "ERSATZWAGEN_GEWAEHLT",
+      "beschreibung": "Ersatzwagen gewählt",
+      "reihenfolge": 6,
+      "partei_zustaendig": ["WERKSTATT", "UNFALLOPFER"],
+      "regeln": {
+        "gruen": {
+          "bedingung": "projekt.ersatzwagenanbieter_id IS NOT NULL AND kostenposition.kategorie = 'ERSATZWAGEN'",
+          "beschreibung": "Ersatzwagen ausgewählt und Kosten erfasst"
+        },
+        "orange": {
+          "bedingung": "projekt.ersatzwagenanbieter_id IS NOT NULL",
+          "beschreibung": "Ersatzwagen ausgewählt"
+        },
+        "rot": {
+          "bedingung": "DEFAULT",
+          "beschreibung": "Kein Ersatzwagen gewählt"
+        }
+      }
+    },
+    {
+      "code": "ERSATZWAGEN_FREIGEGEBEN",
+      "beschreibung": "Ersatzwagen freigegeben",
+      "reihenfolge": 7,
+      "partei_zustaendig": ["VERSICHERUNG_GEGNER"],
+      "regeln": {
+        "gruen": {
+          "bedingung": "kostenposition.kategorie = 'ERSATZWAGEN' AND kostenposition.status_ampel = 'GRUEN'",
+          "beschreibung": "Ersatzwagenkosten von Versicherung freigegeben"
+        },
+        "orange": {
+          "bedingung": "kostenposition.kategorie = 'ERSATZWAGEN' AND kostenposition.status_ampel = 'ORANGE'",
+          "beschreibung": "Ersatzwagenkosten bei Versicherung in Prüfung"
+        },
+        "rot": {
+          "bedingung": "DEFAULT",
+          "beschreibung": "Ersatzwagenkosten nicht eingereicht oder abgelehnt"
+        }
+      }
+    },
+    {
+      "code": "REPARATURFREIGABE",
+      "beschreibung": "Reparatur freigegeben",
+      "reihenfolge": 8,
+      "partei_zustaendig": ["VERSICHERUNG_GEGNER", "ANWALT"],
+      "regeln": {
+        "gruen": {
+          "bedingung": "kostenposition.kategorie = 'REPARATUR' AND kostenposition.status_ampel = 'GRUEN'",
+          "beschreibung": "Reparatur von Versicherung freigegeben"
+        },
+        "orange": {
+          "bedingung": "kostenposition.kategorie = 'REPARATUR' AND kostenposition.status_ampel = 'ORANGE'",
+          "beschreibung": "Reparatur bei Versicherung in Prüfung"
+        },
+        "rot": {
+          "bedingung": "DEFAULT",
+          "beschreibung": "Reparatur nicht freigegeben"
+        }
+      }
+    },
+    {
+      "code": "REPARATUR_ABGESCHLOSSEN",
+      "beschreibung": "Reparatur abgeschlossen",
+      "reihenfolge": 9,
+      "partei_zustaendig": ["WERKSTATT"],
+      "regeln": {
+        "gruen": {
+          "bedingung": "dokument.typ = 'RECHNUNG' AND dokument.beschreibung LIKE '%Reparatur%'",
+          "beschreibung": "Reparaturrechnung hochgeladen"
+        },
+        "orange": {
+          "bedingung": "FALSE",
+          "beschreibung": "-"
+        },
+        "rot": {
+          "bedingung": "DEFAULT",
+          "beschreibung": "Reparatur nicht abgeschlossen"
+        }
+      }
+    },
+    {
+      "code": "ANSPRUCHSSCHREIBEN_VERSENDET",
+      "beschreibung": "Anspruchsschreiben versendet",
+      "reihenfolge": 10,
+      "partei_zustaendig": ["ANWALT"],
+      "regeln": {
+        "gruen": {
+          "bedingung": "korrespondenz.richtung = 'RA_AN_VERSICHERUNG' AND korrespondenz.status = 'VERSENDET'",
+          "beschreibung": "Anspruchsschreiben an Versicherung versendet"
+        },
+        "orange": {
+          "bedingung": "korrespondenz.richtung = 'RA_AN_VERSICHERUNG' AND korrespondenz.status = 'FREIGEGEBEN'",
+          "beschreibung": "Anspruchsschreiben erstellt, Versand ausstehend"
+        },
+        "rot": {
+          "bedingung": "DEFAULT",
+          "beschreibung": "Kein Anspruchsschreiben erstellt"
+        }
+      }
+    },
+    {
+      "code": "KOMMUNIKATION_RA_VERSICHERUNG",
+      "beschreibung": "Kommunikation RA/Versicherung",
+      "reihenfolge": 11,
+      "partei_zustaendig": ["ANWALT", "VERSICHERUNG_GEGNER"],
+      "regeln": {
+        "gruen": {
+          "bedingung": "korrespondenz.richtung IN ('RA_AN_VERSICHERUNG', 'VERSICHERUNG_AN_RA') AND korrespondenz.antwort_erhalten = TRUE",
+          "beschreibung": "Kommunikation abgeschlossen"
+        },
+        "orange": {
+          "bedingung": "korrespondenz.richtung = 'RA_AN_VERSICHERUNG' AND korrespondenz.antwort_erhalten = FALSE",
+          "beschreibung": "Antwort der Versicherung ausstehend"
+        },
+        "rot": {
+          "bedingung": "DEFAULT",
+          "beschreibung": "Keine Kommunikation"
+        }
+      }
+    },
+    {
+      "code": "KOSTENREGULIERUNG_ABGESCHLOSSEN",
+      "beschreibung": "Kostenregulierung abgeschlossen",
+      "reihenfolge": 12,
+      "partei_zustaendig": ["ANWALT", "VERSICHERUNG_GEGNER"],
+      "regeln": {
+        "gruen": {
+          "bedingung": "ALL(kostenposition.status_ampel = 'GRUEN')",
+          "beschreibung": "Alle Kostenpositionen reguliert"
+        },
+        "orange": {
+          "bedingung": "ANY(kostenposition.status_ampel = 'GRUEN') AND ANY(kostenposition.status_ampel != 'GRUEN')",
+          "beschreibung": "Teilweise reguliert, einige Positionen offen"
+        },
+        "rot": {
+          "bedingung": "DEFAULT",
+          "beschreibung": "Keine Regulierung erfolgt"
+        }
+      }
+    }
+  ],
+  "version": "1.0",
+  "beschreibung": "Meilenstein-Konfiguration für Schadenmanager",
+  "hinweis": "Die Bedingungen werden von der Meilenstein-Engine interpretiert. DEFAULT ist der Fallback-Zustand."
+}
