@@ -4,7 +4,7 @@ Verkehrsunfall-Abwicklungs-App
 """
 import streamlit as st
 
-from src.config.database import init_db
+from src.config.database import init_db, get_session
 from src.ui.styles import inject_css
 from src.ui.pages.login import require_login, get_current_user_role
 from src.ui.pages.dashboard import render_dashboard
@@ -34,6 +34,15 @@ def main():
     # Datenbank initialisieren (nur beim ersten Start)
     if "db_initialized" not in st.session_state:
         init_db()
+
+        # Demo-Daten erstellen
+        try:
+            from src.services.demo_data import create_demo_data
+            with get_session() as db:
+                create_demo_data(db)
+        except Exception as e:
+            print(f"Demo-Daten konnten nicht erstellt werden: {e}")
+
         st.session_state["db_initialized"] = True
 
     # Login prüfen

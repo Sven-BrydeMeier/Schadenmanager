@@ -209,11 +209,45 @@ GLOBAL_CSS = """
     box-shadow: 0 4px 6px rgba(0,0,0,0.1);
 }
 
-/* Form-Inputs */
+/* Form-Inputs - Sichtbare Eingabefelder */
 .stTextInput > div > div > input,
-.stSelectbox > div > div > div,
+.stNumberInput > div > div > input,
 .stTextArea > div > div > textarea {
     border-radius: 8px;
+    background-color: #ffffff !important;
+    border: 1px solid #d1d5db !important;
+    color: #1f2937 !important;
+    padding: 0.5rem 0.75rem !important;
+}
+
+.stTextInput > div > div > input:focus,
+.stNumberInput > div > div > input:focus,
+.stTextArea > div > div > textarea:focus {
+    border-color: #2563eb !important;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2) !important;
+}
+
+.stSelectbox > div > div {
+    background-color: #ffffff !important;
+    border: 1px solid #d1d5db !important;
+    border-radius: 8px;
+}
+
+/* Labels fuer Eingabefelder */
+.stTextInput label,
+.stNumberInput label,
+.stSelectbox label,
+.stTextArea label,
+.stDateInput label,
+.stTimeInput label {
+    color: #374151 !important;
+    font-weight: 500 !important;
+}
+
+/* Placeholder-Text */
+.stTextInput > div > div > input::placeholder,
+.stTextArea > div > div > textarea::placeholder {
+    color: #9ca3af !important;
 }
 
 /* Tabs */

@@ -7,16 +7,51 @@ from sqlalchemy.orm import Session
 from src.services.auth import AuthService, speichere_sms_code, verifiziere_sms_code
 from src.config.database import get_session
 
+# App-Informationen
+APP_NAME = "Schadenmanager"
+APP_VERSION = "1.0.0"
+APP_DESCRIPTION = "Verkehrsunfall-Abwicklungs-App"
+
 
 def render_login():
     """Rendert die Login-Seite"""
 
     st.markdown("""
     <style>
-    .login-container {
-        max-width: 400px;
-        margin: 0 auto;
-        padding: 2rem;
+    .login-header {
+        text-align: center;
+        padding: 2rem 0;
+    }
+    .login-title {
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: #1e293b;
+        margin-bottom: 0.5rem;
+    }
+    .login-subtitle {
+        font-size: 1rem;
+        color: #64748b;
+        margin-bottom: 0.25rem;
+    }
+    .login-version {
+        font-size: 0.75rem;
+        color: #94a3b8;
+    }
+    .demo-box {
+        background-color: #f0f9ff;
+        border: 1px solid #bae6fd;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-top: 1rem;
+    }
+    .demo-box h4 {
+        color: #0369a1;
+        margin-bottom: 0.5rem;
+    }
+    .demo-credentials {
+        font-family: monospace;
+        font-size: 0.875rem;
+        color: #1e293b;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -25,7 +60,17 @@ def render_login():
     col1, col2, col3 = st.columns([1, 2, 1])
 
     with col2:
-        st.markdown("## Anmelden")
+        # Header mit Logo/Titel
+        st.markdown(f"""
+        <div class="login-header">
+            <div class="login-title">🚗 {APP_NAME}</div>
+            <div class="login-subtitle">{APP_DESCRIPTION}</div>
+            <div class="login-version">Version {APP_VERSION}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("---")
+        st.markdown("### Anmelden")
         st.markdown("Melden Sie sich mit Ihren Zugangsdaten an.")
 
         # Login-Formular
@@ -64,6 +109,20 @@ def render_login():
                                 st.rerun()
                         else:
                             st.error(fehler)
+
+        # Demo-Accounts anzeigen
+        st.markdown("""
+        <div class="demo-box">
+            <h4>Demo-Zugangsdaten</h4>
+            <div class="demo-credentials">
+                <strong>Admin:</strong> admin@demo.de / Demo123!<br>
+                <strong>Anwalt:</strong> anwalt@demo.de / Demo123!<br>
+                <strong>Werkstatt:</strong> werkstatt@demo.de / Demo123!<br>
+                <strong>Gutachter:</strong> gutachter@demo.de / Demo123!<br>
+                <strong>Unfallopfer:</strong> kunde@demo.de / Demo123!
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
         # Link zur Registrierung
         st.markdown("---")
