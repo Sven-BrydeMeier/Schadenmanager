@@ -186,9 +186,13 @@ def create_demo_data(db: Session) -> bool:
 
     db.flush()
 
-    # Demo-Unfallprojekt erstellen
+    # Demo-Unfallprojekt erstellen mit Aktenzeichen
+    aktuelles_jahr = datetime.now().year
     projekt = UnfallProjekt(
         projektnummer="UP-20241201-DEMO01",
+        aktenzeichen=f"1/{str(aktuelles_jahr)[-2:]}",
+        aktenzeichen_nummer=1,
+        aktenzeichen_jahr=aktuelles_jahr,
         datum_unfall=datetime.now() - timedelta(days=14),
         ort_unfall="München, Leopoldstraße / Ecke Feilitzschstraße",
         beschreibung_unfall="Auffahrunfall an roter Ampel. Gegnerisches Fahrzeug fuhr auf stehendes Fahrzeug auf.",

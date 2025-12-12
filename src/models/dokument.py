@@ -27,12 +27,26 @@ class Dokument(Base):
     ocr_text = Column(Text)
     ocr_verarbeitet = Column(Boolean, default=False)
     ocr_verarbeitet_am = Column(DateTime)
+    ocr_manuell_korrigiert = Column(Boolean, default=False)  # Wurde OCR manuell korrigiert?
+    ocr_korrigiert_von_user_id = Column(Integer, ForeignKey("user.id"))
+    ocr_korrigiert_am = Column(DateTime)
     ki_strukturierte_daten = Column(Text)  # JSON mit extrahierten Daten
+    ki_daten_uebernommen = Column(Boolean, default=False)  # Wurden KI-Daten übernommen?
     ki_verarbeitet = Column(Boolean, default=False)
     ki_verarbeitet_am = Column(DateTime)
 
     # Sichtbarkeit (welche Rollen dürfen das Dokument sehen)
     sichtbarkeit = Column(String(255), default="ALLE")  # "ALLE" oder kommagetrennte Rollenliste
+
+    # Freigabe-Status für Beteiligte
+    freigabe_erforderlich = Column(Boolean, default=True)  # Muss freigegeben werden?
+    freigabe_erteilt = Column(Boolean, default=False)      # Wurde Freigabe erteilt?
+    freigabe_erteilt_von_user_id = Column(Integer, ForeignKey("user.id"))
+    freigabe_erteilt_am = Column(DateTime)
+    freigabe_abgelehnt = Column(Boolean, default=False)    # Freigabe dauerhaft abgelehnt?
+    freigabe_abgelehnt_am = Column(DateTime)
+    # User-IDs die Freigabe übersprungen haben (kommagetrennt) - diese werden nicht erneut gefragt
+    freigabe_uebersprungen_von = Column(Text, default="")
 
     # Status
     status = Column(String(50), default="HOCHGELADEN")  # HOCHGELADEN, VERARBEITET, FEHLER
@@ -45,7 +59,9 @@ class Dokument(Base):
 
     # Relationships
     projekt = relationship("UnfallProjekt", back_populates="dokumente")
-    hochgeladen_von = relationship("User")
+    hochgeladen_von = relationship("User", foreign_keys=[hochgeladen_von_user_id])
+    ocr_korrigiert_von = relationship("User", foreign_keys=[ocr_korrigiert_von_user_id])
+    freigabe_erteilt_von = relationship("User", foreign_keys=[freigabe_erteilt_von_user_id])
 
     def __repr__(self):
         return f"<Dokument(id={self.id}, typ={self.dokument_typ.value if self.dokument_typ else 'None'}, datei='{self.original_dateiname}')>"
@@ -71,3 +87,20 @@ class Dokument(Base):
             return True
         erlaubte_rollen = [r.strip() for r in self.sichtbarkeit.split(",")]
         return rolle in erlaubte_rollen
+
+    def hat_freigabe_uebersprungen(self, user_id: int) -> bool:
+        """Prüft ob ein Benutzer die Freigabe für dieses Dokument übersprungen hat"""
+        if not self.freigabe_uebersprungen_von:
+            return False
+        uebersprungen_ids = [int(x.strip()) for x in self.freigabe_uebersprungen_von.split(",") if x.strip()]
+        return user_id in uebersprungen_ids
+
+    def freigabe_ueberspringen(self, user_id: int):
+        """Markiert, dass ein Benutzer die Freigabe übersprungen hat"""
+        if self.hat_freigabe_uebersprungen(user_id):
+            return  # Bereits übersprungen
+
+        if self.freigabe_uebersprungen_von:
+            self.freigabe_uebersprungen_von += f",{user_id}"
+        else:
+            self.freigabe_uebersprungen_von = str(user_id)

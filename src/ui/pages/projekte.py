@@ -13,6 +13,7 @@ from src.models import (
     TimelineMeilenstein, MeilensteinStatus
 )
 from src.services.meilenstein_engine import get_meilenstein_engine
+from src.services.aktenmanagement import AktenmanagementService
 from src.ui.components import projekt_header, timeline, badge, alert
 from src.config.database import get_session
 
@@ -70,7 +71,7 @@ def _render_projekt_liste(user_id: int, rolle: str):
             )
 
         with col2:
-            such_text = st.text_input("Suche (Projektnummer, Kennzeichen)")
+            such_text = st.text_input("Suche (Aktenzeichen, Projektnummer, Kennzeichen)")
 
         with col3:
             sortierung = st.selectbox(
@@ -90,8 +91,12 @@ def _render_projekt_liste(user_id: int, rolle: str):
 
         if such_text:
             such_pattern = f"%{such_text}%"
+            from sqlalchemy import or_
             query = query.filter(
-                UnfallProjekt.projektnummer.ilike(such_pattern)
+                or_(
+                    UnfallProjekt.projektnummer.ilike(such_pattern),
+                    UnfallProjekt.aktenzeichen.ilike(such_pattern)
+                )
             )
 
         # Sortierung
@@ -122,7 +127,13 @@ def _render_projekt_karte(projekt: UnfallProjekt, rolle: str):
         col1, col2, col3, col4 = st.columns([2, 2, 1, 1])
 
         with col1:
-            st.markdown(f"### {projekt.projektnummer}")
+            # Aktenzeichen prominent anzeigen
+            if projekt.aktenzeichen:
+                st.markdown(f"### Az. {projekt.aktenzeichen}")
+                st.caption(f"Projekt: {projekt.projektnummer}")
+            else:
+                st.markdown(f"### {projekt.projektnummer}")
+
             if projekt.kfz_eigen:
                 st.caption(f"{projekt.kfz_eigen.kennzeichen} - {projekt.kfz_eigen.fahrzeug_bezeichnung}")
 
@@ -237,6 +248,11 @@ def _render_neues_projekt_formular():
                     rolle = st.session_state.get("user_rolle")
                     organisation_id = st.session_state.get("user_organisation_id")
 
+                    # Aktenzeichen automatisch generieren
+                    akten_service = AktenmanagementService(db)
+                    aktenzeichen = akten_service.generiere_aktenzeichen(organisation_id)
+                    az_nummer, az_jahr = akten_service.parse_aktenzeichen(aktenzeichen)
+
                     projekt = UnfallProjekt(
                         datum_unfall=datetime.combine(datum_unfall, uhrzeit_unfall) if uhrzeit_unfall else datetime.combine(datum_unfall, datetime.min.time()),
                         ort_unfall=ort_unfall,
@@ -248,7 +264,10 @@ def _render_neues_projekt_formular():
                         anlegende_organisation_id=organisation_id,
                         angelegt_von_user_id=user_id,
                         status="OFFEN",
-                        einladungs_code=uuid.uuid4().hex[:12].upper()
+                        einladungs_code=uuid.uuid4().hex[:12].upper(),
+                        aktenzeichen=aktenzeichen,
+                        aktenzeichen_nummer=az_nummer,
+                        aktenzeichen_jahr=az_jahr
                     )
 
                     # Zuweisungen basierend auf Rolle
@@ -266,7 +285,9 @@ def _render_neues_projekt_formular():
                     engine = get_meilenstein_engine()
                     engine.initialisiere_meilensteine(db, projekt)
 
-                    st.success(f"Projekt {projekt.projektnummer} wurde erfolgreich angelegt!")
+                    st.success(f"Projekt wurde erfolgreich angelegt!")
+                    st.markdown(f"**Aktenzeichen:** {projekt.aktenzeichen}")
+                    st.caption(f"Projektnummer: {projekt.projektnummer}")
 
                     # Einladungslink anzeigen
                     st.info(f"Einladungscode für Unfallopfer: **{projekt.einladungs_code}**")
@@ -327,6 +348,12 @@ def render_projekt_details():
 
 def _render_projekt_details_tab(projekt: UnfallProjekt):
     """Rendert den Details-Tab"""
+
+    # Aktenzeichen-Info oben anzeigen
+    if projekt.aktenzeichen:
+        st.markdown(f"### Aktenzeichen: {projekt.aktenzeichen}")
+        st.caption(f"Projektnummer: {projekt.projektnummer}")
+        st.markdown("---")
 
     col1, col2 = st.columns(2)
 

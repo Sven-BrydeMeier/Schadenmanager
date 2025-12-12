@@ -36,12 +36,66 @@ GLOBAL_CSS = """
     background-color: #1e293b;
 }
 
-[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
-    color: #e2e8f0;
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h1,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h4,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] span,
+[data-testid="stSidebar"] .stMarkdown {
+    color: #ffffff !important;
 }
 
-[data-testid="stSidebar"] .stSelectbox label {
-    color: #e2e8f0;
+[data-testid="stSidebar"] .stSelectbox label,
+[data-testid="stSidebar"] label {
+    color: #ffffff !important;
+}
+
+/* Sidebar Radio-Buttons (Navigation) */
+[data-testid="stSidebar"] .stRadio > div {
+    background-color: transparent;
+}
+
+[data-testid="stSidebar"] .stRadio label {
+    color: #ffffff !important;
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    margin: 2px 0;
+    transition: all 0.2s ease;
+}
+
+[data-testid="stSidebar"] .stRadio label:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+[data-testid="stSidebar"] .stRadio label[data-checked="true"],
+[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label[aria-checked="true"] {
+    background-color: #2563eb !important;
+    color: #ffffff !important;
+}
+
+/* Sidebar Buttons */
+[data-testid="stSidebar"] .stButton > button {
+    background-color: #475569;
+    color: #ffffff !important;
+    border: none;
+}
+
+[data-testid="stSidebar"] .stButton > button:hover {
+    background-color: #64748b;
+    color: #ffffff !important;
+}
+
+/* Sidebar Captions */
+[data-testid="stSidebar"] .stCaption,
+[data-testid="stSidebar"] small {
+    color: #94a3b8 !important;
+}
+
+/* Sidebar Divider */
+[data-testid="stSidebar"] hr {
+    border-color: rgba(255, 255, 255, 0.2);
 }
 
 /* Card-Container */

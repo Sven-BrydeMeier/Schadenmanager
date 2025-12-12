@@ -20,6 +20,11 @@ class UnfallProjekt(Base):
     id = Column(Integer, primary_key=True)
     projektnummer = Column(String(50), unique=True, nullable=False, default=generate_projektnummer)
 
+    # Aktenzeichen (Format: "NNN/YY" z.B. "777/25")
+    aktenzeichen = Column(String(20))
+    aktenzeichen_nummer = Column(Integer)  # Die Nummer (z.B. 777)
+    aktenzeichen_jahr = Column(Integer)    # Das Jahr (z.B. 2025)
+
     # Unfalldaten
     datum_unfall = Column(DateTime)
     uhrzeit_unfall = Column(String(10))
