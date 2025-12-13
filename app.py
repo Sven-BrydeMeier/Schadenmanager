@@ -15,6 +15,9 @@ from src.ui.pages.ersatzwagen import render_ersatzwagen_modul, render_ersatzwage
 from src.ui.pages.gebuehren import render_gebuehren
 from src.ui.pages.korrespondenz import render_korrespondenz
 from src.ui.pages.dokumente import get_ausstehende_freigaben
+from src.ui.pages.wiedervorlagen import render_wiedervorlagen
+from src.ui.pages.rechner import render_rechner
+from src.ui.pages.audit_log import render_audit_log
 
 
 # Streamlit-Konfiguration
@@ -91,13 +94,21 @@ def render_sidebar(rolle: str) -> str:
 
         # Rollenspezifische Menüpunkte
         if rolle in ["ANWALT", "ADMIN"]:
-            menu.extend(["Korrespondenz", "Gebührenberechnung"])
+            menu.extend(["Korrespondenz", "Gebührenberechnung", "Schadensrechner"])
 
         if rolle in ["WERKSTATT", "UNFALLOPFER", "ADMIN"]:
             menu.append("Ersatzwagen")
 
         if rolle in ["ANWALT", "WERKSTATT", "VERSICHERUNG_EIGEN", "VERSICHERUNG_GEGNER", "ADMIN"]:
             menu.append("Kosten")
+
+        # Wiedervorlagen für alle Rollen mit Projektzugriff
+        if rolle in ["ANWALT", "WERKSTATT", "GUTACHTER", "ADMIN"]:
+            menu.append("Wiedervorlagen")
+
+        # Audit-Log nur für Admins und Anwälte
+        if rolle in ["ADMIN", "ANWALT"]:
+            menu.append("Audit-Log")
 
         if rolle == "ADMIN":
             menu.append("Ersatzwagen-Verwaltung")
@@ -293,6 +304,15 @@ def render_page(page: str, rolle: str):
             render_ersatzwagen_verwaltung()
         else:
             st.error("Keine Berechtigung für diese Seite.")
+
+    elif page == "Wiedervorlagen":
+        render_wiedervorlagen()
+
+    elif page == "Schadensrechner":
+        render_rechner()
+
+    elif page == "Audit-Log":
+        render_audit_log()
 
     else:
         st.warning(f"Seite '{page}' nicht gefunden.")

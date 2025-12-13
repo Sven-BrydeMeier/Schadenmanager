@@ -13,6 +13,8 @@ from src.models.kosten import KostenPosition
 from src.models.ersatzwagen import ErsatzwagenAnbieter, MietfahrzeugAngebot
 from src.models.gebuehren import GebuehrenBerechnung
 from src.models.korrespondenz import Korrespondenz
+from src.models.wiedervorlage import Wiedervorlage, WiedervorlageTyp, WiedervorlagePrioritaet
+from src.models.audit_log import AuditLog, AktionTyp, AktionKategorie
 
 __all__ = [
     'Base',
@@ -21,5 +23,7 @@ __all__ = [
     'Organisation', 'User', 'Fahrzeug', 'UnfallProjekt',
     'Dokument', 'TimelineMeilenstein', 'KostenPosition',
     'ErsatzwagenAnbieter', 'MietfahrzeugAngebot',
-    'GebuehrenBerechnung', 'Korrespondenz'
+    'GebuehrenBerechnung', 'Korrespondenz',
+    'Wiedervorlage', 'WiedervorlageTyp', 'WiedervorlagePrioritaet',
+    'AuditLog', 'AktionTyp', 'AktionKategorie'
 ]

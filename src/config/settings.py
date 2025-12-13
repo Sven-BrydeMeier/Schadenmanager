@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = Field(default=50)
     allowed_extensions: str = Field(default="pdf,png,jpg,jpeg,tiff,doc,docx")
 
+    # E-Mail (SMTP)
+    smtp_host: str = Field(default="smtp.gmail.com")
+    smtp_port: int = Field(default=587)
+    smtp_username: Optional[str] = Field(default=None)
+    smtp_password: Optional[str] = Field(default=None)
+    smtp_from_email: str = Field(default="noreply@schadenmanager.de")
+    smtp_use_tls: bool = Field(default=True)
+    email_notifications_enabled: bool = Field(default=True)
+
     # App
     debug: bool = Field(default=False)
     app_name: str = Field(default="Schadenmanager")
