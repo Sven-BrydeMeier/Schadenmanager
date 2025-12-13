@@ -6,7 +6,7 @@ import streamlit as st
 
 from src.config.database import init_db, get_session
 from src.ui.styles import inject_css
-from src.ui.pages.login import require_login, get_current_user_role
+from src.ui.pages.login import require_login, get_current_user_role, get_app_version
 from src.ui.pages.dashboard import render_dashboard
 from src.ui.pages.projekte import render_projekte, render_projekt_details
 from src.ui.pages.dokumente import render_dokumente
@@ -134,7 +134,7 @@ def render_sidebar(rolle: str) -> str:
 
         # Footer
         st.markdown("---")
-        st.caption("Schadenmanager v1.0")
+        st.caption(f"Schadenmanager v{get_app_version()}")
 
     return seite
 

@@ -2,6 +2,7 @@
 Login-Seite mit 2FA-Unterstützung
 """
 import streamlit as st
+from datetime import datetime
 from sqlalchemy.orm import Session
 
 from src.services.auth import AuthService, speichere_sms_code, verifiziere_sms_code
@@ -9,8 +10,13 @@ from src.config.database import get_session
 
 # App-Informationen
 APP_NAME = "Schadenmanager"
-APP_VERSION = "1.0.0"
 APP_DESCRIPTION = "Verkehrsunfall-Abwicklungs-App"
+
+
+def get_app_version() -> str:
+    """Generiert die Versionsnummer im Format YY.MM.DD.HHMM"""
+    now = datetime.now()
+    return f"{now.strftime('%y')}.{now.strftime('%m')}.{now.strftime('%d')}.{now.strftime('%H%M')}"
 
 
 def render_login():
@@ -65,7 +71,7 @@ def render_login():
         <div class="login-header">
             <div class="login-title">🚗 {APP_NAME}</div>
             <div class="login-subtitle">{APP_DESCRIPTION}</div>
-            <div class="login-version">Version {APP_VERSION}</div>
+            <div class="login-version">Version {get_app_version()}</div>
         </div>
         """, unsafe_allow_html=True)
 
