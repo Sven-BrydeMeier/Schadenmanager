@@ -36,6 +36,19 @@ from src.ui.pages.schadensbilder import render_schadensbilder
 from src.ui.pages.haftungsquote import render_haftungsquote
 from src.ui.pages.datev import render_datev
 from src.ui.pages.restwert import render_restwert
+from src.ui.pages.ki_analyse import render_ki_analyse
+from src.ui.pages.fristen import render_fristen
+from src.ui.pages.vergleich import render_vergleich
+from src.ui.pages.email import render_email
+from src.ui.pages.fallbericht import render_fallbericht
+from src.ui.pages.sprachnotizen import render_sprachnotizen
+from src.ui.pages.unfallort_karte import render_unfallort_karte
+from src.ui.pages.fahrzeugbewertung import render_fahrzeugbewertung
+from src.ui.pages.serienbriefe import render_serienbriefe
+from src.ui.pages.api_verwaltung import render_api_verwaltung
+from src.ui.pages.backup import render_backup
+from src.ui.pages.mandanten import render_mandanten
+from src.ui.pages.themes import render_themes
 
 
 # Streamlit-Konfiguration
@@ -198,6 +211,58 @@ def render_sidebar(rolle: str) -> str:
         # Restwertbörse für Anwälte, Werkstätten und Admins
         if rolle in ["ADMIN", "ANWALT", "WERKSTATT"]:
             menu.append("Restwertbörse")
+
+        # Neue erweiterte Features
+        # KI-Analyse für Anwälte und Admins
+        if rolle in ["ADMIN", "ANWALT"]:
+            menu.append("KI-Analyse")
+
+        # Fristenwarnsystem für alle mit Projektzugriff
+        if rolle in ["ADMIN", "ANWALT", "WERKSTATT", "GUTACHTER"]:
+            menu.append("Fristen")
+
+        # Vergleichsrechner für Anwälte und Admins
+        if rolle in ["ADMIN", "ANWALT"]:
+            menu.append("Vergleichsrechner")
+
+        # E-Mail-Integration für Anwälte, Werkstätten und Admins
+        if rolle in ["ADMIN", "ANWALT", "WERKSTATT"]:
+            menu.append("E-Mail")
+
+        # Fallberichte für Anwälte und Admins
+        if rolle in ["ADMIN", "ANWALT"]:
+            menu.append("Fallberichte")
+
+        # Sprachnotizen für alle mit Projektzugriff
+        if rolle in ["ADMIN", "ANWALT", "WERKSTATT", "GUTACHTER"]:
+            menu.append("Sprachnotizen")
+
+        # Unfallort-Karte für alle mit Projektzugriff
+        if rolle in ["ADMIN", "ANWALT", "WERKSTATT", "GUTACHTER"]:
+            menu.append("Unfallort-Karte")
+
+        # Fahrzeugbewertung für Anwälte, Werkstätten und Gutachter
+        if rolle in ["ADMIN", "ANWALT", "WERKSTATT", "GUTACHTER"]:
+            menu.append("Fahrzeugbewertung")
+
+        # Serienbriefe für Anwälte und Admins
+        if rolle in ["ADMIN", "ANWALT"]:
+            menu.append("Serienbriefe")
+
+        # API-Verwaltung nur für Admins
+        if rolle == "ADMIN":
+            menu.append("API-Verwaltung")
+
+        # Backup nur für Admins
+        if rolle == "ADMIN":
+            menu.append("Backup")
+
+        # Multi-Mandanten nur für Admins
+        if rolle == "ADMIN":
+            menu.append("Mandanten")
+
+        # Theme-Einstellungen für alle
+        menu.append("Erscheinungsbild")
 
         if rolle == "ADMIN":
             menu.append("Ersatzwagen-Verwaltung")
@@ -456,6 +521,54 @@ def render_page(page: str, rolle: str):
 
     elif page == "Restwertbörse":
         render_restwert()
+
+    elif page == "KI-Analyse":
+        render_ki_analyse()
+
+    elif page == "Fristen":
+        render_fristen()
+
+    elif page == "Vergleichsrechner":
+        render_vergleich()
+
+    elif page == "E-Mail":
+        render_email()
+
+    elif page == "Fallberichte":
+        render_fallbericht()
+
+    elif page == "Sprachnotizen":
+        render_sprachnotizen()
+
+    elif page == "Unfallort-Karte":
+        render_unfallort_karte()
+
+    elif page == "Fahrzeugbewertung":
+        render_fahrzeugbewertung()
+
+    elif page == "Serienbriefe":
+        render_serienbriefe()
+
+    elif page == "API-Verwaltung":
+        if rolle == "ADMIN":
+            render_api_verwaltung()
+        else:
+            st.error("Keine Berechtigung für diese Seite.")
+
+    elif page == "Backup":
+        if rolle == "ADMIN":
+            render_backup()
+        else:
+            st.error("Keine Berechtigung für diese Seite.")
+
+    elif page == "Mandanten":
+        if rolle == "ADMIN":
+            render_mandanten()
+        else:
+            st.error("Keine Berechtigung für diese Seite.")
+
+    elif page == "Erscheinungsbild":
+        render_themes()
 
     else:
         st.warning(f"Seite '{page}' nicht gefunden.")

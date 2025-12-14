@@ -33,6 +33,21 @@ from src.services.haftungsquote import HaftungsBerechnung, UnfallTyp
 from src.services.datev import DATEVExport
 from src.services.restwert import RestwertAnfrage, RestwertAngebot, RestwertStatus
 
+# Neue Services (zweite Batch)
+from src.services.ki_analyse import DokumentAnalyse, AnalyseTyp
+from src.services.fristen import Frist, FristTyp, FristPrioritaet, FristStatus
+from src.services.vergleich import Vergleichsangebot, VergleichsStatus
+from src.services.email_integration import Email, EmailKonto, EmailVorlage, EmailStatus, EmailPrioritaet
+from src.services.fallbericht import Fallbericht, BerichtTyp, BerichtFormat
+from src.services.sprachnotizen import Sprachnotiz, SprachnotizStatus, SprachnotizKategorie
+from src.services.unfallort_karte import Unfallort, StrassenTyp, UnfallortTyp
+from src.services.fahrzeugbewertung import Fahrzeugbewertung, BewertungsAnbieter, BewertungsTyp, ZustandsNote
+from src.services.serienbriefe import Dokumentvorlage, GeneriertesDokument, VorlageKategorie
+from src.services.api import APIKey, APILog, APIBerechtigung, APIKeyStatus
+from src.services.backup import Backup, BackupTyp, BackupStatus, ExportFormat
+from src.services.mandanten import Mandant, MandantBenutzer, MandantStatus, LizenzTyp
+from src.services.themes import BenutzerTheme, ThemeTyp
+
 __all__ = [
     'Base',
     'Rollen', 'OrgTyp', 'MeilensteinStatus', 'KostenKategorie',
@@ -57,5 +72,19 @@ __all__ = [
     'Schadensbild', 'BildKategorie',
     'HaftungsBerechnung', 'UnfallTyp',
     'DATEVExport',
-    'RestwertAnfrage', 'RestwertAngebot', 'RestwertStatus'
+    'RestwertAnfrage', 'RestwertAngebot', 'RestwertStatus',
+    # Zweite Batch neue Models
+    'DokumentAnalyse', 'AnalyseTyp',
+    'Frist', 'FristTyp', 'FristPrioritaet', 'FristStatus',
+    'Vergleichsangebot', 'VergleichsStatus',
+    'Email', 'EmailKonto', 'EmailVorlage', 'EmailStatus', 'EmailPrioritaet',
+    'Fallbericht', 'BerichtTyp', 'BerichtFormat',
+    'Sprachnotiz', 'SprachnotizStatus', 'SprachnotizKategorie',
+    'Unfallort', 'StrassenTyp', 'UnfallortTyp',
+    'Fahrzeugbewertung', 'BewertungsAnbieter', 'BewertungsTyp', 'ZustandsNote',
+    'Dokumentvorlage', 'GeneriertesDokument', 'VorlageKategorie',
+    'APIKey', 'APILog', 'APIBerechtigung', 'APIKeyStatus',
+    'Backup', 'BackupTyp', 'BackupStatus', 'ExportFormat',
+    'Mandant', 'MandantBenutzer', 'MandantStatus', 'LizenzTyp',
+    'BenutzerTheme', 'ThemeTyp'
 ]
