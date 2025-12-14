@@ -24,6 +24,8 @@ from src.ui.pages.mandanten_portal import render_mandanten_portal
 from src.ui.pages.papierkorb import render_papierkorb
 from src.ui.pages.signatur import render_signatur
 from src.ui.pages.admin_tools import render_admin_tools
+from src.ui.pages.dsgvo import render_dsgvo
+from src.ui.pages.ermittlungsakte import render_ermittlungsakte
 
 
 # Streamlit-Konfiguration
@@ -138,6 +140,14 @@ def render_sidebar(rolle: str) -> str:
         # Admin-Tools für Admins und Anwälte
         if rolle in ["ADMIN", "ANWALT"]:
             menu.append("Admin-Tools")
+
+        # DSGVO für Anwälte, Werkstätten und Admins
+        if rolle in ["ADMIN", "ANWALT", "WERKSTATT"]:
+            menu.append("DSGVO")
+
+        # Ermittlungsakte nur für Anwälte und Admins
+        if rolle in ["ADMIN", "ANWALT"]:
+            menu.append("Ermittlungsakte")
 
         if rolle == "ADMIN":
             menu.append("Ersatzwagen-Verwaltung")
@@ -360,6 +370,12 @@ def render_page(page: str, rolle: str):
 
     elif page == "Admin-Tools":
         render_admin_tools()
+
+    elif page == "DSGVO":
+        render_dsgvo()
+
+    elif page == "Ermittlungsakte":
+        render_ermittlungsakte()
 
     else:
         st.warning(f"Seite '{page}' nicht gefunden.")

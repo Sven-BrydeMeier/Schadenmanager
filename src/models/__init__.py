@@ -19,6 +19,10 @@ from src.models.notiz import Notiz, Mahnung
 from src.models.checkliste import ChecklistenItem
 from src.models.signatur import DigitaleSignatur, SignaturAnforderung
 
+# Models aus Services (dort definiert wegen komplexer Abhängigkeiten)
+from src.services.dsgvo import DSGVOProtokoll, DSGVOAktionTyp
+from src.services.ermittlungsakte import Ermittlungsakte, ErmittlungsakteWeitergabe, ErmittlungsakteStatus
+
 __all__ = [
     'Base',
     'Rollen', 'OrgTyp', 'MeilensteinStatus', 'KostenKategorie',
@@ -30,5 +34,7 @@ __all__ = [
     'Wiedervorlage', 'WiedervorlageTyp', 'WiedervorlagePrioritaet',
     'AuditLog', 'AktionTyp', 'AktionKategorie',
     'Notiz', 'Mahnung', 'ChecklistenItem',
-    'DigitaleSignatur', 'SignaturAnforderung'
+    'DigitaleSignatur', 'SignaturAnforderung',
+    'DSGVOProtokoll', 'DSGVOAktionTyp',
+    'Ermittlungsakte', 'ErmittlungsakteWeitergabe', 'ErmittlungsakteStatus'
 ]
