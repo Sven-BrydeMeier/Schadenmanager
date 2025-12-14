@@ -17,6 +17,7 @@ from src.models.wiedervorlage import Wiedervorlage, WiedervorlageTyp, Wiedervorl
 from src.models.audit_log import AuditLog, AktionTyp, AktionKategorie
 from src.models.notiz import Notiz, Mahnung
 from src.models.checkliste import ChecklistenItem
+from src.models.signatur import DigitaleSignatur, SignaturAnforderung
 
 __all__ = [
     'Base',
@@ -28,5 +29,6 @@ __all__ = [
     'GebuehrenBerechnung', 'Korrespondenz',
     'Wiedervorlage', 'WiedervorlageTyp', 'WiedervorlagePrioritaet',
     'AuditLog', 'AktionTyp', 'AktionKategorie',
-    'Notiz', 'Mahnung', 'ChecklistenItem'
+    'Notiz', 'Mahnung', 'ChecklistenItem',
+    'DigitaleSignatur', 'SignaturAnforderung'
 ]

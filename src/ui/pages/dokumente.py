@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from src.models import UnfallProjekt, Dokument, DokumentTyp
 from src.services.ocr import get_ocr_service, get_ki_extraktor
+from src.services.papierkorb import get_papierkorb_service
 from src.ui.components import badge, alert
 from src.config.database import get_session
 from src.config.settings import get_settings
@@ -195,7 +196,10 @@ def _render_dokumente_liste(db: Session, projekt: UnfallProjekt):
 
     st.markdown("### Dokumente")
 
-    if not projekt.dokumente:
+    # Nur nicht-gelöschte Dokumente anzeigen
+    alle_dokumente = [d for d in projekt.dokumente if not d.geloescht]
+
+    if not alle_dokumente:
         st.info("Noch keine Dokumente hochgeladen.")
         return
 
@@ -216,7 +220,7 @@ def _render_dokumente_liste(db: Session, projekt: UnfallProjekt):
             index=0
         )
 
-    dokumente = list(projekt.dokumente)
+    dokumente = list(alle_dokumente)
 
     if typ_filter != "Alle":
         dokumente = [d for d in dokumente if d.dokument_typ and d.dokument_typ.value == typ_filter]
@@ -229,6 +233,9 @@ def _render_dokumente_liste(db: Session, projekt: UnfallProjekt):
         dokumente = [d for d in dokumente if d.freigabe_abgelehnt]
 
     st.markdown("---")
+
+    papierkorb = get_papierkorb_service(db)
+    user_id = st.session_state.get("user_id")
 
     for dok in sorted(dokumente, key=lambda x: x.erstellt_am or datetime.min, reverse=True):
         with st.expander(f"{dok.dokument_typ_anzeige}: {dok.original_dateiname}"):
@@ -272,6 +279,16 @@ def _render_dokumente_liste(db: Session, projekt: UnfallProjekt):
                             mime=dok.mime_typ,
                             key=f"download_{dok.id}"
                         )
+
+                # Löschen-Button (in Papierkorb verschieben)
+                if st.button("Löschen", key=f"delete_{dok.id}", type="secondary"):
+                    erfolg, nachricht = papierkorb.in_papierkorb_verschieben(dok.id, user_id)
+                    if erfolg:
+                        st.success(nachricht)
+                        st.info("Das Dokument kann im Papierkorb wiederhergestellt werden.")
+                    else:
+                        st.error(nachricht)
+                    st.rerun()
 
             # OCR-Text anzeigen
             if dok.ocr_text:
@@ -612,6 +629,9 @@ def get_ausstehende_freigaben(db: Session, user_id: int, include_skipped: bool =
     ausstehende = []
     for projekt in projekte:
         for dok in projekt.dokumente:
+            # Gelöschte Dokumente überspringen
+            if dok.geloescht:
+                continue
             if dok.freigabe_erforderlich and not dok.freigabe_erteilt and not dok.freigabe_abgelehnt:
                 # Wenn include_skipped=False, übersprungene Dokumente ausfiltern
                 if not include_skipped and dok.hat_freigabe_uebersprungen(user_id):

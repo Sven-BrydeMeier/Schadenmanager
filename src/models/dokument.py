@@ -53,6 +53,12 @@ class Dokument(Base):
     beschreibung = Column(Text)
     notizen = Column(Text)
 
+    # Papierkorb (Soft-Delete)
+    geloescht = Column(Boolean, default=False)
+    geloescht_am = Column(DateTime)
+    geloescht_von_user_id = Column(Integer, ForeignKey("user.id"))
+    urspruenglicher_pfad = Column(String(500))  # Original-Pfad vor dem Löschen
+
     # Timestamps
     erstellt_am = Column(DateTime, default=datetime.utcnow)
     aktualisiert_am = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -62,6 +68,7 @@ class Dokument(Base):
     hochgeladen_von = relationship("User", foreign_keys=[hochgeladen_von_user_id])
     ocr_korrigiert_von = relationship("User", foreign_keys=[ocr_korrigiert_von_user_id])
     freigabe_erteilt_von = relationship("User", foreign_keys=[freigabe_erteilt_von_user_id])
+    geloescht_von = relationship("User", foreign_keys=[geloescht_von_user_id])
 
     def __repr__(self):
         return f"<Dokument(id={self.id}, typ={self.dokument_typ.value if self.dokument_typ else 'None'}, datei='{self.original_dateiname}')>"

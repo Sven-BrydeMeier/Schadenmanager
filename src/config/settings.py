@@ -40,6 +40,17 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = Field(default=50)
     allowed_extensions: str = Field(default="pdf,png,jpg,jpeg,tiff,doc,docx")
 
+    # Papierkorb
+    papierkorb_folder: str = Field(default="./papierkorb")
+    papierkorb_aufbewahrung_stunden: int = Field(
+        default=48,
+        description="Aufbewahrungsdauer im Papierkorb in Stunden (Standard: 48)"
+    )
+    papierkorb_auto_loeschen: bool = Field(
+        default=True,
+        description="Automatisches Löschen nach Ablauf der Aufbewahrungsfrist"
+    )
+
     # E-Mail (SMTP)
     smtp_host: str = Field(default="smtp.gmail.com")
     smtp_port: int = Field(default=587)

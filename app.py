@@ -21,6 +21,9 @@ from src.ui.pages.audit_log import render_audit_log
 from src.ui.pages.statistik import render_statistik
 from src.ui.pages.werkzeuge import render_werkzeuge
 from src.ui.pages.mandanten_portal import render_mandanten_portal
+from src.ui.pages.papierkorb import render_papierkorb
+from src.ui.pages.signatur import render_signatur
+from src.ui.pages.admin_tools import render_admin_tools
 
 
 # Streamlit-Konfiguration
@@ -124,6 +127,17 @@ def render_sidebar(rolle: str) -> str:
         # Statistik für Admins und Anwälte
         if rolle in ["ADMIN", "ANWALT"]:
             menu.append("Statistik")
+
+        # Papierkorb für alle mit Dokumentenzugriff
+        if rolle in ["ADMIN", "ANWALT", "WERKSTATT", "GUTACHTER"]:
+            menu.append("Papierkorb")
+
+        # Digitale Signatur für alle
+        menu.append("Signatur")
+
+        # Admin-Tools für Admins und Anwälte
+        if rolle in ["ADMIN", "ANWALT"]:
+            menu.append("Admin-Tools")
 
         if rolle == "ADMIN":
             menu.append("Ersatzwagen-Verwaltung")
@@ -337,6 +351,15 @@ def render_page(page: str, rolle: str):
 
     elif page == "Mein Schadensfall":
         render_mandanten_portal()
+
+    elif page == "Papierkorb":
+        render_papierkorb()
+
+    elif page == "Signatur":
+        render_signatur()
+
+    elif page == "Admin-Tools":
+        render_admin_tools()
 
     else:
         st.warning(f"Seite '{page}' nicht gefunden.")
