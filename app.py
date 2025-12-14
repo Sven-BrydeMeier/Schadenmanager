@@ -49,6 +49,7 @@ from src.ui.pages.api_verwaltung import render_api_verwaltung
 from src.ui.pages.backup import render_backup
 from src.ui.pages.mandanten import render_mandanten
 from src.ui.pages.themes import render_themes
+from src.ui.pages.gutachten_plausibilitaet import render_gutachten_plausibilitaet
 
 
 # Streamlit-Konfiguration
@@ -203,6 +204,10 @@ def render_sidebar(rolle: str) -> str:
         # Haftungsquoten-Rechner für Anwälte und Admins
         if rolle in ["ADMIN", "ANWALT"]:
             menu.append("Haftungsquote")
+
+        # Gutachten-Plausibilitätsprüfung für Anwälte und Admins
+        if rolle in ["ADMIN", "ANWALT"]:
+            menu.append("Gutachten-Prüfung")
 
         # DATEV-Export nur für Anwälte und Admins
         if rolle in ["ADMIN", "ANWALT"]:
@@ -515,6 +520,12 @@ def render_page(page: str, rolle: str):
 
     elif page == "Haftungsquote":
         render_haftungsquote()
+
+    elif page == "Gutachten-Prüfung":
+        if rolle in ["ADMIN", "ANWALT"]:
+            render_gutachten_plausibilitaet()
+        else:
+            st.error("Keine Berechtigung für diese Seite.")
 
     elif page == "DATEV-Export":
         render_datev()

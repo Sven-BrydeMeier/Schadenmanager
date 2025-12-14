@@ -47,6 +47,7 @@ from src.services.api import APIKey, APILog, APIBerechtigung, APIKeyStatus
 from src.services.backup import Backup, BackupTyp, BackupStatus, ExportFormat
 from src.services.mandanten import Mandant, MandantBenutzer, MandantStatus, LizenzTyp
 from src.services.themes import BenutzerTheme, ThemeTyp
+from src.services.gutachten_plausibilitaet import GutachtenPruefung, PruefungsSchwere, PruefungsKategorie
 
 __all__ = [
     'Base',
@@ -86,5 +87,7 @@ __all__ = [
     'APIKey', 'APILog', 'APIBerechtigung', 'APIKeyStatus',
     'Backup', 'BackupTyp', 'BackupStatus', 'ExportFormat',
     'Mandant', 'MandantBenutzer', 'MandantStatus', 'LizenzTyp',
-    'BenutzerTheme', 'ThemeTyp'
+    'BenutzerTheme', 'ThemeTyp',
+    # Gutachten-Plausibilitätsprüfung
+    'GutachtenPruefung', 'PruefungsSchwere', 'PruefungsKategorie'
 ]
