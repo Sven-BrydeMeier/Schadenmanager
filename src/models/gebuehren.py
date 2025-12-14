@@ -106,7 +106,8 @@ class GebuehrenBerechnung(Base):
         self.gebuehrenwert = self.get_gebuehrenwert(self.streitwert)
 
         # Geschäftsgebühr (Nr. 2300 VV RVG)
-        self.geschaeftsgebuehr = round(self.gebuehrenwert * self.geschaeftsgebuehr_faktor, 2)
+        faktor = self.geschaeftsgebuehr_faktor if self.geschaeftsgebuehr_faktor is not None else 1.3
+        self.geschaeftsgebuehr = round(self.gebuehrenwert * faktor, 2)
 
         # Einigungsgebühr falls zutreffend (Nr. 1000 VV RVG)
         if self.einigungsgebuehr_faktor and self.einigungsgebuehr_faktor > 0:
@@ -125,7 +126,8 @@ class GebuehrenBerechnung(Base):
         )
 
         # Umsatzsteuer
-        self.umsatzsteuer = round(self.zwischensumme_netto * self.umsatzsteuer_satz / 100, 2)
+        ust_satz = self.umsatzsteuer_satz if self.umsatzsteuer_satz is not None else 19.0
+        self.umsatzsteuer = round(self.zwischensumme_netto * ust_satz / 100, 2)
 
         # Gesamtbetrag
         self.gesamt_brutto = round(self.zwischensumme_netto + self.umsatzsteuer, 2)
