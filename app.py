@@ -118,173 +118,112 @@ def render_sidebar(rolle: str) -> str:
         st.caption(rolle_anzeige)
         st.markdown("---")
 
-        # Navigation
-        st.markdown("### Navigation")
+        # Aktuelle Seite aus Session
+        aktuelle_seite = st.session_state.get("page", "Dashboard")
 
-        # Gemeinsame Menüpunkte
-        menu = ["Dashboard", "Projekte", "Dokumente"]
+        # Helper-Funktion für Menü-Buttons
+        def menu_button(label: str, key: str = None):
+            """Erstellt einen Menü-Button"""
+            is_active = aktuelle_seite == label
+            btn_type = "primary" if is_active else "secondary"
+            if st.button(label, key=key or f"menu_{label}", use_container_width=True, type=btn_type):
+                st.session_state["page"] = label
+                st.rerun()
 
-        # Rollenspezifische Menüpunkte
-        if rolle in ["ANWALT", "ADMIN"]:
-            menu.extend(["Korrespondenz", "Gebührenberechnung", "Schadensrechner"])
-
-        if rolle in ["WERKSTATT", "UNFALLOPFER", "ADMIN"]:
-            menu.append("Ersatzwagen")
+        # ===== HAUPTBEREICH =====
+        st.markdown("#### 📋 Hauptbereich")
+        menu_button("Dashboard")
+        menu_button("Projekte")
+        menu_button("Dokumente")
 
         # Mandanten-Portal für Unfallopfer
         if rolle == "UNFALLOPFER":
-            menu.append("Mein Schadensfall")
+            menu_button("Mein Schadensfall")
 
-        if rolle in ["ANWALT", "WERKSTATT", "VERSICHERUNG_EIGEN", "VERSICHERUNG_GEGNER", "ADMIN"]:
-            menu.append("Kosten")
+        # ===== KOMMUNIKATION =====
+        with st.expander("💬 Kommunikation", expanded=aktuelle_seite in ["Korrespondenz", "Nachrichten", "E-Mail", "Serienbriefe"]):
+            if rolle in ["ANWALT", "ADMIN"]:
+                menu_button("Korrespondenz")
+            menu_button("Nachrichten")
+            if rolle in ["ADMIN", "ANWALT", "WERKSTATT"]:
+                menu_button("E-Mail")
+            if rolle in ["ADMIN", "ANWALT"]:
+                menu_button("Serienbriefe")
 
-        # Wiedervorlagen für alle Rollen mit Projektzugriff
-        if rolle in ["ANWALT", "WERKSTATT", "GUTACHTER", "ADMIN"]:
-            menu.append("Wiedervorlagen")
+        # ===== TERMINE & FRISTEN =====
+        with st.expander("📅 Termine & Fristen", expanded=aktuelle_seite in ["Kalender", "Wiedervorlagen", "Fristen"]):
+            if rolle in ["ADMIN", "ANWALT", "WERKSTATT", "GUTACHTER"]:
+                menu_button("Kalender")
+                menu_button("Wiedervorlagen")
+                menu_button("Fristen")
 
-        # Werkzeuge für Anwälte, Werkstätten und Admins
-        if rolle in ["ANWALT", "WERKSTATT", "ADMIN"]:
-            menu.append("Werkzeuge")
+        # ===== SCHADEN & GUTACHTEN =====
+        with st.expander("🔍 Schaden & Gutachten", expanded=aktuelle_seite in ["Schadensbilder", "Unfallskizze", "Unfallort-Karte", "Fahrzeugbewertung", "Restwertbörse", "Gutachten-Prüfung", "Sprachnotizen"]):
+            if rolle in ["ADMIN", "ANWALT", "WERKSTATT", "GUTACHTER"]:
+                menu_button("Schadensbilder")
+                menu_button("Unfallskizze")
+                menu_button("Unfallort-Karte")
+                menu_button("Fahrzeugbewertung")
+                menu_button("Sprachnotizen")
+            if rolle in ["ADMIN", "ANWALT", "WERKSTATT"]:
+                menu_button("Restwertbörse")
+            if rolle in ["ADMIN", "ANWALT"]:
+                menu_button("Gutachten-Prüfung")
 
-        # Audit-Log nur für Admins und Anwälte
+        # ===== FINANZEN & ABRECHNUNG =====
+        with st.expander("💰 Finanzen", expanded=aktuelle_seite in ["Kosten", "Gebührenberechnung", "Schadensrechner", "Haftungsquote", "Vergleichsrechner", "Rechnungen", "DATEV-Export"]):
+            if rolle in ["ANWALT", "WERKSTATT", "VERSICHERUNG_EIGEN", "VERSICHERUNG_GEGNER", "ADMIN"]:
+                menu_button("Kosten")
+            if rolle in ["ANWALT", "ADMIN"]:
+                menu_button("Gebührenberechnung")
+                menu_button("Schadensrechner")
+                menu_button("Haftungsquote")
+                menu_button("Vergleichsrechner")
+                menu_button("Rechnungen")
+                menu_button("DATEV-Export")
+
+        # ===== RECHTSBEREICH =====
         if rolle in ["ADMIN", "ANWALT"]:
-            menu.append("Audit-Log")
+            with st.expander("⚖️ Rechtsbereich", expanded=aktuelle_seite in ["Ermittlungsakte", "Prozessmodul", "Fallberichte"]):
+                menu_button("Ermittlungsakte")
+                menu_button("Prozessmodul")
+                menu_button("Fallberichte")
 
-        # Statistik für Admins und Anwälte
-        if rolle in ["ADMIN", "ANWALT"]:
-            menu.append("Statistik")
+        # ===== FAHRZEUG & VERSICHERUNG =====
+        with st.expander("🚗 Fahrzeug", expanded=aktuelle_seite in ["Ersatzwagen", "Versicherungen", "Ersatzwagen-Verwaltung"]):
+            if rolle in ["WERKSTATT", "UNFALLOPFER", "ADMIN"]:
+                menu_button("Ersatzwagen")
+            if rolle not in ["UNFALLOPFER"]:
+                menu_button("Versicherungen")
+            if rolle == "ADMIN":
+                menu_button("Ersatzwagen-Verwaltung")
 
-        # Papierkorb für alle mit Dokumentenzugriff
-        if rolle in ["ADMIN", "ANWALT", "WERKSTATT", "GUTACHTER"]:
-            menu.append("Papierkorb")
+        # ===== WERKZEUGE & KI =====
+        with st.expander("🛠️ Werkzeuge & KI", expanded=aktuelle_seite in ["Werkzeuge", "KI-Analyse"]):
+            if rolle in ["ANWALT", "WERKSTATT", "ADMIN"]:
+                menu_button("Werkzeuge")
+            if rolle in ["ADMIN", "ANWALT"]:
+                menu_button("KI-Analyse")
 
-        # Digitale Signatur für alle
-        menu.append("Signatur")
+        # ===== SYSTEM =====
+        with st.expander("⚙️ System", expanded=aktuelle_seite in ["Statistik", "Audit-Log", "Signatur", "DSGVO", "Papierkorb", "Admin-Tools", "API-Verwaltung", "Backup", "Mandanten", "Erscheinungsbild"]):
+            if rolle in ["ADMIN", "ANWALT"]:
+                menu_button("Statistik")
+                menu_button("Audit-Log")
+            menu_button("Signatur")
+            if rolle in ["ADMIN", "ANWALT", "WERKSTATT"]:
+                menu_button("DSGVO")
+            if rolle in ["ADMIN", "ANWALT", "WERKSTATT", "GUTACHTER"]:
+                menu_button("Papierkorb")
+            if rolle in ["ADMIN", "ANWALT"]:
+                menu_button("Admin-Tools")
+            if rolle == "ADMIN":
+                menu_button("API-Verwaltung")
+                menu_button("Backup")
+                menu_button("Mandanten")
+            menu_button("Erscheinungsbild")
 
-        # Admin-Tools für Admins und Anwälte
-        if rolle in ["ADMIN", "ANWALT"]:
-            menu.append("Admin-Tools")
-
-        # DSGVO für Anwälte, Werkstätten und Admins
-        if rolle in ["ADMIN", "ANWALT", "WERKSTATT"]:
-            menu.append("DSGVO")
-
-        # Ermittlungsakte nur für Anwälte und Admins
-        if rolle in ["ADMIN", "ANWALT"]:
-            menu.append("Ermittlungsakte")
-
-        # Neue Features
-        # Terminkalender für alle mit Projektzugriff
-        if rolle in ["ADMIN", "ANWALT", "WERKSTATT", "GUTACHTER"]:
-            menu.append("Kalender")
-
-        # Prozessmodul nur für Anwälte und Admins
-        if rolle in ["ADMIN", "ANWALT"]:
-            menu.append("Prozessmodul")
-
-        # Nachrichten für alle
-        menu.append("Nachrichten")
-
-        # Unfallskizze für alle mit Projektzugriff
-        if rolle in ["ADMIN", "ANWALT", "WERKSTATT", "GUTACHTER"]:
-            menu.append("Unfallskizze")
-
-        # Versicherungsdatenbank für alle außer Unfallopfer
-        if rolle not in ["UNFALLOPFER"]:
-            menu.append("Versicherungen")
-
-        # Rechnungsstellung nur für Anwälte und Admins
-        if rolle in ["ADMIN", "ANWALT"]:
-            menu.append("Rechnungen")
-
-        # Schadensbilder für alle mit Projektzugriff
-        if rolle in ["ADMIN", "ANWALT", "WERKSTATT", "GUTACHTER"]:
-            menu.append("Schadensbilder")
-
-        # Haftungsquoten-Rechner für Anwälte und Admins
-        if rolle in ["ADMIN", "ANWALT"]:
-            menu.append("Haftungsquote")
-
-        # Gutachten-Plausibilitätsprüfung für Anwälte und Admins
-        if rolle in ["ADMIN", "ANWALT"]:
-            menu.append("Gutachten-Prüfung")
-
-        # DATEV-Export nur für Anwälte und Admins
-        if rolle in ["ADMIN", "ANWALT"]:
-            menu.append("DATEV-Export")
-
-        # Restwertbörse für Anwälte, Werkstätten und Admins
-        if rolle in ["ADMIN", "ANWALT", "WERKSTATT"]:
-            menu.append("Restwertbörse")
-
-        # Neue erweiterte Features
-        # KI-Analyse für Anwälte und Admins
-        if rolle in ["ADMIN", "ANWALT"]:
-            menu.append("KI-Analyse")
-
-        # Fristenwarnsystem für alle mit Projektzugriff
-        if rolle in ["ADMIN", "ANWALT", "WERKSTATT", "GUTACHTER"]:
-            menu.append("Fristen")
-
-        # Vergleichsrechner für Anwälte und Admins
-        if rolle in ["ADMIN", "ANWALT"]:
-            menu.append("Vergleichsrechner")
-
-        # E-Mail-Integration für Anwälte, Werkstätten und Admins
-        if rolle in ["ADMIN", "ANWALT", "WERKSTATT"]:
-            menu.append("E-Mail")
-
-        # Fallberichte für Anwälte und Admins
-        if rolle in ["ADMIN", "ANWALT"]:
-            menu.append("Fallberichte")
-
-        # Sprachnotizen für alle mit Projektzugriff
-        if rolle in ["ADMIN", "ANWALT", "WERKSTATT", "GUTACHTER"]:
-            menu.append("Sprachnotizen")
-
-        # Unfallort-Karte für alle mit Projektzugriff
-        if rolle in ["ADMIN", "ANWALT", "WERKSTATT", "GUTACHTER"]:
-            menu.append("Unfallort-Karte")
-
-        # Fahrzeugbewertung für Anwälte, Werkstätten und Gutachter
-        if rolle in ["ADMIN", "ANWALT", "WERKSTATT", "GUTACHTER"]:
-            menu.append("Fahrzeugbewertung")
-
-        # Serienbriefe für Anwälte und Admins
-        if rolle in ["ADMIN", "ANWALT"]:
-            menu.append("Serienbriefe")
-
-        # API-Verwaltung nur für Admins
-        if rolle == "ADMIN":
-            menu.append("API-Verwaltung")
-
-        # Backup nur für Admins
-        if rolle == "ADMIN":
-            menu.append("Backup")
-
-        # Multi-Mandanten nur für Admins
-        if rolle == "ADMIN":
-            menu.append("Mandanten")
-
-        # Theme-Einstellungen für alle
-        menu.append("Erscheinungsbild")
-
-        if rolle == "ADMIN":
-            menu.append("Ersatzwagen-Verwaltung")
-
-        # Aktuelle Seite aus Session oder Standard
-        aktuelle_seite = st.session_state.get("page", "Dashboard")
-        if aktuelle_seite not in menu:
-            aktuelle_seite = "Dashboard"
-
-        seite = st.radio(
-            "Menü",
-            menu,
-            index=menu.index(aktuelle_seite) if aktuelle_seite in menu else 0,
-            label_visibility="collapsed"
-        )
-
-        st.session_state["page"] = seite
+        seite = st.session_state.get("page", "Dashboard")
 
         # Aktives Projekt anzeigen
         aktives_projekt_id = st.session_state.get("aktives_projekt_id")
