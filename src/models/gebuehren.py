@@ -109,17 +109,19 @@ class GebuehrenBerechnung(Base):
         self.geschaeftsgebuehr = round(self.gebuehrenwert * self.geschaeftsgebuehr_faktor, 2)
 
         # Einigungsgebühr falls zutreffend (Nr. 1000 VV RVG)
-        if self.einigungsgebuehr_faktor > 0:
+        if self.einigungsgebuehr_faktor and self.einigungsgebuehr_faktor > 0:
             self.einigungsgebuehr = round(self.gebuehrenwert * self.einigungsgebuehr_faktor, 2)
+        else:
+            self.einigungsgebuehr = 0.0
 
         # Zwischensumme
         self.zwischensumme_netto = (
-            self.geschaeftsgebuehr +
-            self.einigungsgebuehr +
-            self.auslagenpauschale +
-            self.dokumentenpauschale +
-            self.reisekosten +
-            self.sonstige_auslagen
+            (self.geschaeftsgebuehr or 0) +
+            (self.einigungsgebuehr or 0) +
+            (self.auslagenpauschale or 0) +
+            (self.dokumentenpauschale or 0) +
+            (self.reisekosten or 0) +
+            (self.sonstige_auslagen or 0)
         )
 
         # Umsatzsteuer
