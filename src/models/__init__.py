@@ -15,6 +15,8 @@ from src.models.gebuehren import GebuehrenBerechnung
 from src.models.korrespondenz import Korrespondenz
 from src.models.wiedervorlage import Wiedervorlage, WiedervorlageTyp, WiedervorlagePrioritaet
 from src.models.audit_log import AuditLog, AktionTyp, AktionKategorie
+from src.models.notiz import Notiz, Mahnung
+from src.models.checkliste import ChecklistenItem
 
 __all__ = [
     'Base',
@@ -25,5 +27,6 @@ __all__ = [
     'ErsatzwagenAnbieter', 'MietfahrzeugAngebot',
     'GebuehrenBerechnung', 'Korrespondenz',
     'Wiedervorlage', 'WiedervorlageTyp', 'WiedervorlagePrioritaet',
-    'AuditLog', 'AktionTyp', 'AktionKategorie'
+    'AuditLog', 'AktionTyp', 'AktionKategorie',
+    'Notiz', 'Mahnung', 'ChecklistenItem'
 ]

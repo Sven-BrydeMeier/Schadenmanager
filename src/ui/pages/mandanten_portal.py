@@ -1,0 +1,424 @@
+"""
+Mandanten-Portal - Vereinfachte Ansicht für Unfallopfer
+"""
+import streamlit as st
+from datetime import datetime
+from typing import Optional
+
+from sqlalchemy.orm import Session
+
+from src.models import (
+    UnfallProjekt, Dokument, TimelineMeilenstein,
+    KostenPosition, MeilensteinStatus
+)
+from src.ui.components import badge
+from src.config.database import get_session
+
+
+def render_mandanten_portal():
+    """Rendert das Mandanten-Portal für Unfallopfer"""
+
+    st.markdown("## Mein Schadensfall")
+
+    user_id = st.session_state.get("user_id")
+
+    with get_session() as db:
+        # Projekte des Mandanten laden
+        projekte = db.query(UnfallProjekt).filter(
+            UnfallProjekt.unfallopfer_user_id == user_id
+        ).order_by(UnfallProjekt.erstellt_am.desc()).all()
+
+        if not projekte:
+            st.info("Sie haben derzeit keine aktiven Schadensfälle.")
+            st.markdown("""
+            ### Was können Sie hier tun?
+
+            Im Mandanten-Portal haben Sie jederzeit Einblick in den aktuellen Stand
+            Ihres Schadensfalles. Sie können:
+
+            - Den Fortschritt Ihres Falles verfolgen
+            - Hochgeladene Dokumente einsehen
+            - Die Kostenübersicht betrachten
+            - Nachrichten mit Ihrem Anwalt austauschen
+
+            Sobald ein Schadensfall für Sie angelegt wurde, erscheint er hier.
+            """)
+            return
+
+        # Wenn mehrere Projekte, Auswahl anbieten
+        if len(projekte) > 1:
+            projekt_optionen = {
+                f"{p.aktenzeichen or p.projektnummer} - {p.unfalldatum.strftime('%d.%m.%Y') if p.unfalldatum else 'Unbekannt'}": p.id
+                for p in projekte
+            }
+
+            ausgewaehltes = st.selectbox(
+                "Schadensfall auswählen",
+                list(projekt_optionen.keys())
+            )
+            projekt_id = projekt_optionen[ausgewaehltes]
+            projekt = next(p for p in projekte if p.id == projekt_id)
+        else:
+            projekt = projekte[0]
+
+        # Tabs für verschiedene Bereiche
+        tabs = st.tabs([
+            "Übersicht",
+            "Fortschritt",
+            "Dokumente",
+            "Kosten",
+            "Kontakt"
+        ])
+
+        with tabs[0]:
+            _render_uebersicht(projekt)
+
+        with tabs[1]:
+            _render_fortschritt(db, projekt)
+
+        with tabs[2]:
+            _render_dokumente(db, projekt)
+
+        with tabs[3]:
+            _render_kosten_uebersicht(db, projekt)
+
+        with tabs[4]:
+            _render_kontakt(db, projekt)
+
+
+def _render_uebersicht(projekt: UnfallProjekt):
+    """Rendert die Fallübersicht"""
+
+    st.markdown("### Ihr Schadensfall auf einen Blick")
+
+    # Status-Karte
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        status_farben = {
+            "AKTIV": "success",
+            "IN_BEARBEITUNG": "warning",
+            "ABGESCHLOSSEN": "info",
+            "STORNIERT": "danger"
+        }
+        st.markdown(
+            f"**Status:** {badge(projekt.status or 'IN BEARBEITUNG', status_farben.get(projekt.status, 'info'))}",
+            unsafe_allow_html=True
+        )
+
+    with col2:
+        st.markdown(f"**Aktenzeichen:** {projekt.aktenzeichen or projekt.projektnummer}")
+
+    with col3:
+        if projekt.unfalldatum:
+            st.markdown(f"**Unfalldatum:** {projekt.unfalldatum.strftime('%d.%m.%Y')}")
+
+    st.markdown("---")
+
+    # Wichtige Informationen
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("#### Unfalldaten")
+
+        if projekt.unfallort:
+            st.markdown(f"**Unfallort:** {projekt.unfallort}")
+
+        if projekt.unfallhergang:
+            st.markdown(f"**Hergang:** {projekt.unfallhergang[:200]}..." if len(projekt.unfallhergang or "") > 200 else f"**Hergang:** {projekt.unfallhergang or 'Nicht angegeben'}")
+
+        if projekt.schuldfrage:
+            st.markdown(f"**Schuldfrage:** {projekt.schuldfrage}")
+
+    with col2:
+        st.markdown("#### Fahrzeug")
+
+        if projekt.fahrzeug:
+            fz = projekt.fahrzeug
+            st.markdown(f"**Fahrzeug:** {fz.hersteller} {fz.modell}")
+            st.markdown(f"**Kennzeichen:** {fz.kennzeichen}")
+            if fz.erstzulassung:
+                st.markdown(f"**Erstzulassung:** {fz.erstzulassung.strftime('%m/%Y')}")
+
+    st.markdown("---")
+
+    # Nächste Schritte / Hinweise
+    st.markdown("#### Aktuelle Hinweise")
+
+    hinweise = []
+
+    # Prüfe auf ausstehende Aktionen
+    if not projekt.dokumente or len([d for d in projekt.dokumente if d.dokument_typ == "VOLLMACHT"]) == 0:
+        hinweise.append("Bitte unterschreiben Sie die Vollmacht und laden Sie diese hoch.")
+
+    if not projekt.fahrzeug:
+        hinweise.append("Fahrzeugdaten wurden noch nicht erfasst.")
+
+    if hinweise:
+        for hinweis in hinweise:
+            st.warning(hinweis)
+    else:
+        st.success("Derzeit sind keine Aktionen Ihrerseits erforderlich. Wir melden uns bei Neuigkeiten.")
+
+
+def _render_fortschritt(db: Session, projekt: UnfallProjekt):
+    """Rendert den Fallfortschritt als Timeline"""
+
+    st.markdown("### Fortschritt Ihres Schadensfalles")
+
+    # Meilensteine laden
+    meilensteine = db.query(TimelineMeilenstein).filter(
+        TimelineMeilenstein.unfallprojekt_id == projekt.id
+    ).order_by(TimelineMeilenstein.reihenfolge).all()
+
+    if not meilensteine:
+        st.info("Der Fortschritt wird hier angezeigt, sobald Meilensteine erfasst wurden.")
+        return
+
+    # Fortschrittsbalken
+    erledigt = len([m for m in meilensteine if m.status == MeilensteinStatus.ERLEDIGT])
+    gesamt = len(meilensteine)
+    prozent = int(erledigt / gesamt * 100) if gesamt > 0 else 0
+
+    st.progress(prozent / 100)
+    st.caption(f"{erledigt} von {gesamt} Schritten abgeschlossen ({prozent}%)")
+
+    st.markdown("---")
+
+    # Timeline anzeigen
+    for ms in meilensteine:
+        col1, col2 = st.columns([1, 4])
+
+        with col1:
+            if ms.status == MeilensteinStatus.ERLEDIGT:
+                st.markdown("**Erledigt**")
+            elif ms.status == MeilensteinStatus.IN_BEARBEITUNG:
+                st.markdown("**In Bearbeitung**")
+            else:
+                st.markdown("Ausstehend")
+
+        with col2:
+            titel = ms.titel
+            if ms.status == MeilensteinStatus.ERLEDIGT:
+                st.markdown(f"~~{titel}~~")
+                if ms.erledigt_am:
+                    st.caption(f"Abgeschlossen am {ms.erledigt_am.strftime('%d.%m.%Y')}")
+            elif ms.status == MeilensteinStatus.IN_BEARBEITUNG:
+                st.markdown(f"**{titel}**")
+            else:
+                st.markdown(titel)
+
+            if ms.beschreibung:
+                st.caption(ms.beschreibung)
+
+        st.markdown("---")
+
+
+def _render_dokumente(db: Session, projekt: UnfallProjekt):
+    """Rendert die Dokumentenübersicht für den Mandanten"""
+
+    st.markdown("### Dokumente")
+
+    # Dokumente laden (nur freigegebene für Mandanten sichtbar)
+    dokumente = db.query(Dokument).filter(
+        Dokument.unfallprojekt_id == projekt.id,
+        Dokument.freigabe_erteilt == True  # Nur freigegebene Dokumente
+    ).order_by(Dokument.hochgeladen_am.desc()).all()
+
+    if not dokumente:
+        st.info("Es wurden noch keine Dokumente für Sie freigegeben.")
+        return
+
+    # Dokumente nach Typ gruppieren
+    dok_typen = {}
+    for dok in dokumente:
+        typ = dok.dokument_typ_anzeige
+        if typ not in dok_typen:
+            dok_typen[typ] = []
+        dok_typen[typ].append(dok)
+
+    for typ, doks in dok_typen.items():
+        with st.expander(f"{typ} ({len(doks)})", expanded=True):
+            for dok in doks:
+                col1, col2, col3 = st.columns([3, 1, 1])
+
+                with col1:
+                    st.markdown(f"**{dok.original_dateiname}**")
+                    st.caption(f"Hochgeladen: {dok.hochgeladen_am.strftime('%d.%m.%Y')}")
+
+                with col2:
+                    if dok.dateipfad:
+                        st.download_button(
+                            "Herunterladen",
+                            data=open(dok.dateipfad, "rb").read() if dok.dateipfad else b"",
+                            file_name=dok.original_dateiname,
+                            key=f"dl_{dok.id}"
+                        )
+
+                st.markdown("---")
+
+    # Upload-Bereich für Mandanten
+    st.markdown("### Dokument hochladen")
+    st.caption("Laden Sie hier Dokumente hoch, die für Ihren Fall relevant sind.")
+
+    uploaded_file = st.file_uploader(
+        "Datei auswählen",
+        type=["pdf", "jpg", "jpeg", "png", "doc", "docx"],
+        key="mandant_upload"
+    )
+
+    if uploaded_file:
+        dokument_typ = st.selectbox(
+            "Dokumenttyp",
+            ["Vollmacht", "Personalausweis", "Fahrzeugschein", "Sonstiges"]
+        )
+
+        if st.button("Hochladen", type="primary"):
+            # Hier würde die Upload-Logik implementiert
+            st.success("Dokument erfolgreich hochgeladen!")
+            st.info("Das Dokument wird geprüft und erscheint dann in der Übersicht.")
+
+
+def _render_kosten_uebersicht(db: Session, projekt: UnfallProjekt):
+    """Rendert die Kostenübersicht für den Mandanten"""
+
+    st.markdown("### Kostenübersicht")
+    st.caption("Hier sehen Sie alle geltend gemachten Schadenspositionen.")
+
+    # Kosten laden
+    kosten = db.query(KostenPosition).filter(
+        KostenPosition.unfallprojekt_id == projekt.id
+    ).all()
+
+    if not kosten:
+        st.info("Es wurden noch keine Kostenpositionen erfasst.")
+        return
+
+    # Zusammenfassung
+    gesamt_gefordert = sum(k.betrag for k in kosten)
+    gesamt_erstattet = sum(k.erstattet_betrag or 0 for k in kosten)
+    offen = gesamt_gefordert - gesamt_erstattet
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric("Gefordert", f"{float(gesamt_gefordert):,.2f} EUR")
+
+    with col2:
+        st.metric("Erstattet", f"{float(gesamt_erstattet):,.2f} EUR")
+
+    with col3:
+        st.metric("Offen", f"{float(offen):,.2f} EUR")
+
+    st.markdown("---")
+
+    # Detailaufstellung
+    st.markdown("#### Detailaufstellung")
+
+    for k in kosten:
+        col1, col2, col3 = st.columns([3, 1, 1])
+
+        with col1:
+            st.markdown(f"**{k.beschreibung}**")
+            st.caption(k.kategorie_anzeige if hasattr(k, 'kategorie_anzeige') else str(k.kategorie))
+
+        with col2:
+            st.markdown(f"{float(k.betrag):,.2f} EUR")
+
+        with col3:
+            if k.erstattet_betrag and k.erstattet_betrag > 0:
+                st.markdown(badge("Erstattet", "success"), unsafe_allow_html=True)
+            else:
+                st.markdown(badge("Offen", "warning"), unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # Hinweis
+    st.info("""
+    **Hinweis:** Die Erstattung erfolgt durch die gegnerische Versicherung.
+    Der Prozess kann mehrere Wochen dauern. Bei Fragen wenden Sie sich bitte an Ihren Anwalt.
+    """)
+
+
+def _render_kontakt(db: Session, projekt: UnfallProjekt):
+    """Rendert den Kontaktbereich"""
+
+    st.markdown("### Kontakt")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("#### Ihr Anwalt")
+
+        if projekt.anwalt:
+            st.markdown(f"**{projekt.anwalt.vorname} {projekt.anwalt.nachname}**")
+            if projekt.anwalt.email:
+                st.markdown(f"E-Mail: {projekt.anwalt.email}")
+            if projekt.anwalt.telefon:
+                st.markdown(f"Telefon: {projekt.anwalt.telefon}")
+        else:
+            st.info("Noch kein Anwalt zugewiesen.")
+
+    with col2:
+        st.markdown("#### Ihre Werkstatt")
+
+        if projekt.werkstatt:
+            st.markdown(f"**{projekt.werkstatt.vorname} {projekt.werkstatt.nachname}**")
+            if projekt.werkstatt.email:
+                st.markdown(f"E-Mail: {projekt.werkstatt.email}")
+            if projekt.werkstatt.telefon:
+                st.markdown(f"Telefon: {projekt.werkstatt.telefon}")
+        else:
+            st.info("Noch keine Werkstatt zugewiesen.")
+
+    st.markdown("---")
+
+    # Nachricht senden
+    st.markdown("#### Nachricht an Ihren Anwalt")
+
+    nachricht = st.text_area(
+        "Ihre Nachricht",
+        placeholder="Schreiben Sie hier Ihre Nachricht...",
+        height=150
+    )
+
+    if st.button("Nachricht senden", type="primary", use_container_width=True):
+        if nachricht:
+            # Hier würde die Nachrichtenlogik implementiert
+            st.success("Ihre Nachricht wurde gesendet!")
+        else:
+            st.error("Bitte geben Sie eine Nachricht ein.")
+
+    st.markdown("---")
+
+    # FAQ
+    with st.expander("Häufige Fragen"):
+        st.markdown("""
+        **Wie lange dauert die Schadensregulierung?**
+
+        Die Dauer hängt von verschiedenen Faktoren ab. In der Regel dauert es
+        4-8 Wochen bis zur ersten Zahlung der Versicherung. Bei strittigen
+        Fällen kann es länger dauern.
+
+        ---
+
+        **Muss ich in Vorleistung gehen?**
+
+        Nein, in der Regel nicht. Die Werkstatt rechnet direkt mit der
+        Versicherung ab. Nur bei Eigenanteilen oder nicht erstattungsfähigen
+        Positionen kann eine Zahlung erforderlich sein.
+
+        ---
+
+        **Was ist ein merkantiler Minderwert?**
+
+        Der merkantile Minderwert ist der Wertverlust, den ein Fahrzeug
+        trotz fachgerechter Reparatur erleidet, weil es als "Unfallwagen" gilt.
+
+        ---
+
+        **Kann ich mir die Werkstatt aussuchen?**
+
+        Ja! Als Geschädigter haben Sie freie Werkstattwahl. Sie müssen nicht
+        in eine Partnerwerkstatt der Versicherung gehen.
+        """)

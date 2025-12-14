@@ -18,6 +18,9 @@ from src.ui.pages.dokumente import get_ausstehende_freigaben
 from src.ui.pages.wiedervorlagen import render_wiedervorlagen
 from src.ui.pages.rechner import render_rechner
 from src.ui.pages.audit_log import render_audit_log
+from src.ui.pages.statistik import render_statistik
+from src.ui.pages.werkzeuge import render_werkzeuge
+from src.ui.pages.mandanten_portal import render_mandanten_portal
 
 
 # Streamlit-Konfiguration
@@ -99,6 +102,10 @@ def render_sidebar(rolle: str) -> str:
         if rolle in ["WERKSTATT", "UNFALLOPFER", "ADMIN"]:
             menu.append("Ersatzwagen")
 
+        # Mandanten-Portal für Unfallopfer
+        if rolle == "UNFALLOPFER":
+            menu.append("Mein Schadensfall")
+
         if rolle in ["ANWALT", "WERKSTATT", "VERSICHERUNG_EIGEN", "VERSICHERUNG_GEGNER", "ADMIN"]:
             menu.append("Kosten")
 
@@ -106,9 +113,17 @@ def render_sidebar(rolle: str) -> str:
         if rolle in ["ANWALT", "WERKSTATT", "GUTACHTER", "ADMIN"]:
             menu.append("Wiedervorlagen")
 
+        # Werkzeuge für Anwälte, Werkstätten und Admins
+        if rolle in ["ANWALT", "WERKSTATT", "ADMIN"]:
+            menu.append("Werkzeuge")
+
         # Audit-Log nur für Admins und Anwälte
         if rolle in ["ADMIN", "ANWALT"]:
             menu.append("Audit-Log")
+
+        # Statistik für Admins und Anwälte
+        if rolle in ["ADMIN", "ANWALT"]:
+            menu.append("Statistik")
 
         if rolle == "ADMIN":
             menu.append("Ersatzwagen-Verwaltung")
@@ -313,6 +328,15 @@ def render_page(page: str, rolle: str):
 
     elif page == "Audit-Log":
         render_audit_log()
+
+    elif page == "Statistik":
+        render_statistik()
+
+    elif page == "Werkzeuge":
+        render_werkzeuge()
+
+    elif page == "Mein Schadensfall":
+        render_mandanten_portal()
 
     else:
         st.warning(f"Seite '{page}' nicht gefunden.")
