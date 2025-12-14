@@ -26,6 +26,16 @@ from src.ui.pages.signatur import render_signatur
 from src.ui.pages.admin_tools import render_admin_tools
 from src.ui.pages.dsgvo import render_dsgvo
 from src.ui.pages.ermittlungsakte import render_ermittlungsakte
+from src.ui.pages.kalender import render_kalender
+from src.ui.pages.prozess import render_prozess
+from src.ui.pages.nachrichten import render_nachrichten
+from src.ui.pages.unfallskizze import render_unfallskizze
+from src.ui.pages.versicherungen import render_versicherungen
+from src.ui.pages.rechnung import render_rechnungen
+from src.ui.pages.schadensbilder import render_schadensbilder
+from src.ui.pages.haftungsquote import render_haftungsquote
+from src.ui.pages.datev import render_datev
+from src.ui.pages.restwert import render_restwert
 
 
 # Streamlit-Konfiguration
@@ -148,6 +158,46 @@ def render_sidebar(rolle: str) -> str:
         # Ermittlungsakte nur für Anwälte und Admins
         if rolle in ["ADMIN", "ANWALT"]:
             menu.append("Ermittlungsakte")
+
+        # Neue Features
+        # Terminkalender für alle mit Projektzugriff
+        if rolle in ["ADMIN", "ANWALT", "WERKSTATT", "GUTACHTER"]:
+            menu.append("Kalender")
+
+        # Prozessmodul nur für Anwälte und Admins
+        if rolle in ["ADMIN", "ANWALT"]:
+            menu.append("Prozessmodul")
+
+        # Nachrichten für alle
+        menu.append("Nachrichten")
+
+        # Unfallskizze für alle mit Projektzugriff
+        if rolle in ["ADMIN", "ANWALT", "WERKSTATT", "GUTACHTER"]:
+            menu.append("Unfallskizze")
+
+        # Versicherungsdatenbank für alle außer Unfallopfer
+        if rolle not in ["UNFALLOPFER"]:
+            menu.append("Versicherungen")
+
+        # Rechnungsstellung nur für Anwälte und Admins
+        if rolle in ["ADMIN", "ANWALT"]:
+            menu.append("Rechnungen")
+
+        # Schadensbilder für alle mit Projektzugriff
+        if rolle in ["ADMIN", "ANWALT", "WERKSTATT", "GUTACHTER"]:
+            menu.append("Schadensbilder")
+
+        # Haftungsquoten-Rechner für Anwälte und Admins
+        if rolle in ["ADMIN", "ANWALT"]:
+            menu.append("Haftungsquote")
+
+        # DATEV-Export nur für Anwälte und Admins
+        if rolle in ["ADMIN", "ANWALT"]:
+            menu.append("DATEV-Export")
+
+        # Restwertbörse für Anwälte, Werkstätten und Admins
+        if rolle in ["ADMIN", "ANWALT", "WERKSTATT"]:
+            menu.append("Restwertbörse")
 
         if rolle == "ADMIN":
             menu.append("Ersatzwagen-Verwaltung")
@@ -376,6 +426,36 @@ def render_page(page: str, rolle: str):
 
     elif page == "Ermittlungsakte":
         render_ermittlungsakte()
+
+    elif page == "Kalender":
+        render_kalender()
+
+    elif page == "Prozessmodul":
+        render_prozess()
+
+    elif page == "Nachrichten":
+        render_nachrichten()
+
+    elif page == "Unfallskizze":
+        render_unfallskizze()
+
+    elif page == "Versicherungen":
+        render_versicherungen()
+
+    elif page == "Rechnungen":
+        render_rechnungen()
+
+    elif page == "Schadensbilder":
+        render_schadensbilder()
+
+    elif page == "Haftungsquote":
+        render_haftungsquote()
+
+    elif page == "DATEV-Export":
+        render_datev()
+
+    elif page == "Restwertbörse":
+        render_restwert()
 
     else:
         st.warning(f"Seite '{page}' nicht gefunden.")
