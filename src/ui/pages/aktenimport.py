@@ -106,6 +106,94 @@ def _render_import_wizard():
         if uploaded_file:
             st.success(f"Datei: {uploaded_file.name} ({uploaded_file.size / 1024:.1f} KB)")
 
+            # Vorschau und Analyse
+            col_preview, col_action = st.columns([3, 1])
+
+            with col_preview:
+                if st.button("PDF analysieren (Vorschau)", use_container_width=True):
+                    pdf_bytes = uploaded_file.read()
+                    uploaded_file.seek(0)  # Reset für späteren Import
+
+                    with st.spinner("Analysiere PDF..."):
+                        vorschau = service._analysiere_pdf(pdf_bytes)
+                        st.session_state['pdf_vorschau'] = vorschau
+                        st.session_state['pdf_bytes'] = pdf_bytes
+
+            # Vorschau anzeigen wenn vorhanden
+            if 'pdf_vorschau' in st.session_state:
+                vorschau = st.session_state['pdf_vorschau']
+
+                st.markdown("---")
+                st.markdown("### Analyse-Ergebnis (Vorschau)")
+
+                # Debug-Info
+                debug_info = vorschau.get('debug_info', {})
+                methode = debug_info.get('methode', 'unbekannt')
+
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Seiten", vorschau.get('anzahl_seiten', 0))
+                with col2:
+                    st.metric("Erkannte Dokumente", len(vorschau.get('inhaltsverzeichnis', [])))
+                with col3:
+                    st.metric("PDF-Lesezeichen", debug_info.get('lesezeichen_gefunden', 0))
+                with col4:
+                    methode_label = {
+                        'lesezeichen': 'PDF-Lesezeichen',
+                        'text_toc': 'Inhaltsverzeichnis',
+                        'fallback_gesamt': 'Nicht erkannt'
+                    }.get(methode, methode)
+                    st.metric("Erkennungsmethode", methode_label)
+
+                # Erkanntes Inhaltsverzeichnis
+                inhaltsverzeichnis = vorschau.get('inhaltsverzeichnis', [])
+                if inhaltsverzeichnis:
+                    st.markdown("#### Erkanntes Inhaltsverzeichnis")
+
+                    for i, eintrag in enumerate(inhaltsverzeichnis):
+                        seiten = f"Seite {eintrag.get('seite_von', '?')}"
+                        if eintrag.get('seite_bis') != eintrag.get('seite_von'):
+                            seiten += f" - {eintrag.get('seite_bis', '?')}"
+                        st.write(f"{i+1}. **{eintrag.get('titel', 'Unbenannt')}** ({seiten}) - Typ: {eintrag.get('typ', 'SONSTIGES')}")
+
+                # Wenn nur ein Dokument (Fallback), warnen
+                if methode == 'fallback_gesamt':
+                    st.warning("""
+                    **Hinweis:** Es wurde kein strukturiertes Inhaltsverzeichnis erkannt.
+                    Die gesamte PDF wird als ein Dokument importiert.
+
+                    **Mögliche Ursachen:**
+                    - Die PDF enthält keine PDF-Lesezeichen (Bookmarks)
+                    - Das Inhaltsverzeichnis im Text verwendet ein unbekanntes Format
+
+                    **Tipp:** Zeigen Sie unten den extrahierten Text an, um das Format zu prüfen.
+                    """)
+
+                # Aktenzeichen
+                if vorschau.get('aktenzeichen'):
+                    st.info(f"Erkanntes Aktenzeichen: **{vorschau.get('aktenzeichen')}**")
+
+                # Text-Vorschau (für Debugging)
+                with st.expander("Extrahierten Text anzeigen (für Debugging)"):
+                    seiten_texte = vorschau.get('seiten_texte', [])
+                    if seiten_texte:
+                        seite_nr = st.selectbox(
+                            "Seite auswählen",
+                            range(1, len(seiten_texte) + 1),
+                            format_func=lambda x: f"Seite {x}"
+                        )
+                        if seite_nr and seite_nr <= len(seiten_texte):
+                            st.text_area(
+                                f"Text von Seite {seite_nr}",
+                                seiten_texte[seite_nr - 1].get('text', ''),
+                                height=300,
+                                disabled=True
+                            )
+                    else:
+                        st.warning("Kein Text extrahiert")
+
+            st.markdown("---")
+
             # Import starten
             if st.button("Import starten", type="primary", use_container_width=True):
                 if not projekt_id:
@@ -131,13 +219,25 @@ def _render_import_wizard():
 
                 with st.spinner("Importiere Akte..."):
                     try:
+                        # PDF-Bytes aus Vorschau oder neu lesen
+                        if 'pdf_bytes' in st.session_state:
+                            pdf_bytes = st.session_state['pdf_bytes']
+                        else:
+                            pdf_bytes = uploaded_file.read()
+
                         akten_import = service.importiere_akte(
                             projekt_id=projekt_id,
-                            pdf_inhalt=uploaded_file.read(),
+                            pdf_inhalt=pdf_bytes,
                             dateiname=uploaded_file.name,
                             user_id=st.session_state.get("user_id", 1)
                         )
                         db.commit()
+
+                        # Vorschau-Cache leeren
+                        if 'pdf_vorschau' in st.session_state:
+                            del st.session_state['pdf_vorschau']
+                        if 'pdf_bytes' in st.session_state:
+                            del st.session_state['pdf_bytes']
 
                         if akten_import.import_abgeschlossen:
                             st.success("Import erfolgreich!")

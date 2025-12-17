@@ -310,7 +310,8 @@ class AktenImportService:
             'inhaltsverzeichnis': [],
             'text_inhalt': '',
             'lesezeichen': [],
-            'seiten_texte': []  # Text pro Seite
+            'seiten_texte': [],  # Text pro Seite
+            'debug_info': {}  # Für Debugging
         }
 
         try:
@@ -355,27 +356,46 @@ class AktenImportService:
                     result['aktenzeichen'] = match.group(1).strip()
                     break
 
-            # Inhaltsverzeichnis erstellen
+            # Inhaltsverzeichnis erstellen - Priorität: Lesezeichen > Text-TOC
+            inhaltsverzeichnis = []
+            methode_verwendet = "keine"
+
+            # 1. Versuch: PDF-Lesezeichen (Bookmarks)
             if result['lesezeichen'] and len(result['lesezeichen']) > 0:
-                # Lesezeichen gefunden - diese verwenden
-                result['inhaltsverzeichnis'] = self._lesezeichen_zu_inhaltsverzeichnis(
+                inhaltsverzeichnis = self._lesezeichen_zu_inhaltsverzeichnis(
                     result['lesezeichen'],
                     result['anzahl_seiten']
                 )
-            else:
-                # Versuche Inhaltsverzeichnis aus Text zu extrahieren
-                result['inhaltsverzeichnis'] = self._extrahiere_inhaltsverzeichnis_aus_text(
+                if inhaltsverzeichnis:
+                    methode_verwendet = "lesezeichen"
+
+            # 2. Versuch: Inhaltsverzeichnis aus Text extrahieren
+            if not inhaltsverzeichnis:
+                inhaltsverzeichnis = self._extrahiere_inhaltsverzeichnis_aus_text(
                     result['text_inhalt'],
                     result['seiten_texte'],
                     result['anzahl_seiten']
                 )
+                if inhaltsverzeichnis:
+                    methode_verwendet = "text_toc"
 
-            # Wenn immer noch kein Inhaltsverzeichnis, seitenbasierte Analyse
-            if not result['inhaltsverzeichnis']:
-                result['inhaltsverzeichnis'] = self._analysiere_seiten_fuer_dokumente(
-                    result['seiten_texte'],
-                    result['anzahl_seiten']
-                )
+            # 3. Fallback: Gesamtes PDF als EIN Dokument (NICHT einzelne Seiten!)
+            if not inhaltsverzeichnis:
+                inhaltsverzeichnis = [{
+                    'position': 0,
+                    'titel': 'Gesamtakte',
+                    'typ': 'AKTE',
+                    'seite_von': 1,
+                    'seite_bis': result['anzahl_seiten']
+                }]
+                methode_verwendet = "fallback_gesamt"
+
+            result['inhaltsverzeichnis'] = inhaltsverzeichnis
+            result['debug_info'] = {
+                'methode': methode_verwendet,
+                'anzahl_eintraege': len(inhaltsverzeichnis),
+                'lesezeichen_gefunden': len(result.get('lesezeichen', [])),
+            }
 
         except Exception as e:
             result['fehler'] = str(e)
@@ -529,12 +549,16 @@ class AktenImportService:
         zeilen = toc_text.split('\n')
 
         for zeile in zeilen:
+            # Bereinigung: Tabs durch Leerzeichen ersetzen, mehrfache Leerzeichen reduzieren
+            zeile = zeile.replace('\t', '   ')
+            zeile = re.sub(r'\s{2,}', '   ', zeile)  # Mehrere Leerzeichen = Trennzeichen
             zeile = zeile.strip()
+
             if not zeile or len(zeile) < 3:
                 continue
 
-            # Pattern 1: "1. Gutachten ..... 5" oder "1) Gutachten ... 5"
-            match = re.match(r'^(\d+)[\.\)]\s*(.+?)[\.…\s]+(\d+)\s*$', zeile)
+            # Pattern 1: "1. Gutachten ..... 5" oder "1) Gutachten ... 5" oder "1.\tGutachten\t5"
+            match = re.match(r'^(\d+)[\.\)]\s*(.+?)(?:[\.…\s]{3,}|\s{3,})(\d+)\s*$', zeile)
             if match:
                 position = int(match.group(1))
                 titel = match.group(2).strip().rstrip('.')
@@ -547,12 +571,12 @@ class AktenImportService:
                     })
                 continue
 
-            # Pattern 2: "Gutachten .............. 5" (ohne Nummerierung)
-            match = re.match(r'^([A-Za-zäöüÄÖÜß][^\.…\d]+?)\s*[\.…\s]{3,}(\d+)\s*$', zeile)
+            # Pattern 2: "Gutachten .............. 5" (ohne Nummerierung, aber mit Trennzeichen)
+            match = re.match(r'^([A-Za-zäöüÄÖÜß][^\d]+?)(?:[\.…\s]{3,}|\s{3,})(\d+)\s*$', zeile)
             if match:
-                titel = match.group(1).strip()
+                titel = match.group(1).strip().rstrip('.')
                 seite = int(match.group(2))
-                if 1 <= seite <= anzahl_seiten and len(titel) >= 2:
+                if 1 <= seite <= anzahl_seiten and len(titel) >= 2 and len(titel) <= 80:
                     gefundene_eintraege.append({
                         'position': len(gefundene_eintraege),
                         'titel': titel,
@@ -560,7 +584,24 @@ class AktenImportService:
                     })
                 continue
 
-            # Pattern 3: "Anlage 1: Gutachten Seite 5" oder "Anlage 1 Gutachten 5"
+            # Pattern 3: "1. Gutachten vom 15.03.2024 5" (Titel mit Datum, Zahl am Ende)
+            match = re.match(r'^(\d+)[\.\)]\s*(.+?)\s+(\d+)\s*$', zeile)
+            if match:
+                position = int(match.group(1))
+                titel = match.group(2).strip()
+                seite = int(match.group(3))
+                # Zusätzliche Prüfung: Seite muss plausibel sein
+                if 1 <= seite <= anzahl_seiten and len(titel) >= 3 and len(titel) <= 80:
+                    # Prüfen, dass der Titel nicht mit einer Zahl endet (wäre sonst Datum)
+                    if not re.search(r'\d{4}$', titel):  # Kein Jahr am Ende
+                        gefundene_eintraege.append({
+                            'position': position,
+                            'titel': titel,
+                            'seite_von': seite
+                        })
+                continue
+
+            # Pattern 4: "Anlage 1: Gutachten Seite 5" oder "Anlage 1 Gutachten 5"
             match = re.match(r'^(?:Anlage\s*)?(\d+)[:\.\)]\s*(.+?)\s+(?:Seite\s*)?(\d+)(?:\s*[-–]\s*(\d+))?\s*$', zeile, re.IGNORECASE)
             if match:
                 position = int(match.group(1))
@@ -578,7 +619,7 @@ class AktenImportService:
                     gefundene_eintraege.append(eintrag)
                 continue
 
-            # Pattern 4: "- Gutachten (Seite 5)" oder "• Gutachten (5-10)"
+            # Pattern 5: "- Gutachten (Seite 5)" oder "• Gutachten (5-10)"
             match = re.match(r'^[-•→]\s*(.+?)\s*\((?:Seite\s*)?(\d+)(?:\s*[-–]\s*(\d+))?\)\s*$', zeile)
             if match:
                 titel = match.group(1).strip()
@@ -595,7 +636,7 @@ class AktenImportService:
                     gefundene_eintraege.append(eintrag)
                 continue
 
-            # Pattern 5: "Seite 5-10: Gutachten" oder "S. 5: Gutachten"
+            # Pattern 6: "Seite 5-10: Gutachten" oder "S. 5: Gutachten"
             match = re.match(r'^(?:Seite|S\.)\s*(\d+)(?:\s*[-–]\s*(\d+))?[:\s]+(.+?)\s*$', zeile, re.IGNORECASE)
             if match:
                 seite_von = int(match.group(1))
@@ -612,7 +653,7 @@ class AktenImportService:
                     gefundene_eintraege.append(eintrag)
                 continue
 
-            # Pattern 6: "Blatt 5-10 Gutachten" (typisch für Gerichtsakten)
+            # Pattern 7: "Blatt 5-10 Gutachten" (typisch für Gerichtsakten)
             match = re.match(r'^(?:Blatt|Bl\.?)\s*(\d+)(?:\s*[-–]\s*(\d+))?[:\s]+(.+?)\s*$', zeile, re.IGNORECASE)
             if match:
                 seite_von = int(match.group(1))
@@ -627,6 +668,18 @@ class AktenImportService:
                     if seite_bis and seite_bis <= anzahl_seiten:
                         eintrag['seite_bis_explizit'] = seite_bis
                     gefundene_eintraege.append(eintrag)
+
+            # Pattern 8: Einfaches Format "Titel    5" (nur Leerzeichen als Trenner, Zahl am Ende)
+            match = re.match(r'^([A-Za-zäöüÄÖÜß][^\d]{2,60}?)\s{2,}(\d+)\s*$', zeile)
+            if match:
+                titel = match.group(1).strip()
+                seite = int(match.group(2))
+                if 1 <= seite <= anzahl_seiten and len(titel) >= 3:
+                    gefundene_eintraege.append({
+                        'position': len(gefundene_eintraege),
+                        'titel': titel,
+                        'seite_von': seite
+                    })
 
         # Wenn keine strukturierten Einträge gefunden, erweiterte Suche
         if not gefundene_eintraege:
