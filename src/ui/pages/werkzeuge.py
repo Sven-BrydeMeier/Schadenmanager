@@ -119,7 +119,7 @@ def _render_dokumentenvorlagen():
         if auswahl == "anspruchsschreiben":
             positionen_text = []
             for kp in projekt.kostenpositionen:
-                positionen_text.append(f"- {kp.bezeichnung}: {float(kp.betrag_gefordert or 0):,.2f} EUR")
+                positionen_text.append(f"- {kp.beschreibung or kp.kategorie.value}: {float(kp.betrag_brutto or 0):,.2f} EUR")
             zusatz_daten["schadenspositionen"] = "\n".join(positionen_text) if positionen_text else "- Noch keine Positionen erfasst"
 
         # Dokument generieren
