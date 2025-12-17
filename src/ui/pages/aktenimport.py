@@ -12,6 +12,115 @@ from src.services.aktenimport import (
 )
 
 
+def _render_inhaltsverzeichnis_baum(inhaltsverzeichnis: list, anzahl_seiten: int = 0):
+    """Rendert das Inhaltsverzeichnis als grafischen Baum"""
+    if not inhaltsverzeichnis:
+        st.warning("Kein Inhaltsverzeichnis vorhanden")
+        return
+
+    # CSS für die Baumdarstellung
+    st.markdown("""
+    <style>
+    .tree-container {
+        font-family: monospace;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        padding: 15px;
+        margin: 10px 0;
+    }
+    .tree-root {
+        font-weight: bold;
+        color: #1f77b4;
+        font-size: 16px;
+    }
+    .tree-item {
+        margin: 8px 0;
+        padding: 8px;
+        background-color: white;
+        border-left: 3px solid #4CAF50;
+        border-radius: 4px;
+    }
+    .tree-item-title {
+        font-weight: bold;
+        color: #333;
+    }
+    .tree-item-pages {
+        color: #666;
+        font-size: 12px;
+    }
+    .tree-item-type {
+        background-color: #e3f2fd;
+        color: #1565c0;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 11px;
+        margin-left: 8px;
+    }
+    .tree-branch {
+        color: #999;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Baum-Header
+    total_docs = len(inhaltsverzeichnis)
+    st.markdown(f"""
+    <div class="tree-container">
+        <div class="tree-root">📁 Akte ({total_docs} Dokumente, {anzahl_seiten} Seiten)</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Dokumente als Baum-Einträge
+    for i, eintrag in enumerate(inhaltsverzeichnis):
+        titel = eintrag.get('titel', f'Dokument {i+1}')
+        seite_von = eintrag.get('seite_von', '?')
+        seite_bis = eintrag.get('seite_bis', '?')
+        typ = eintrag.get('typ', 'SONSTIGES')
+
+        # Seitenbereich berechnen
+        if seite_von == seite_bis:
+            seiten_text = f"Seite {seite_von}"
+        else:
+            seiten_text = f"Seite {seite_von} - {seite_bis}"
+
+        # Anzahl Seiten
+        try:
+            num_seiten = int(seite_bis) - int(seite_von) + 1
+            seiten_text += f" ({num_seiten} Seiten)"
+        except:
+            pass
+
+        # Typ-Icon
+        typ_icons = {
+            'GUTACHTEN': '📋',
+            'KOSTENVORANSCHLAG': '💰',
+            'RECHNUNG': '🧾',
+            'VOLLMACHT': '📝',
+            'KORRESPONDENZ': '✉️',
+            'FOTOS': '📷',
+            'POLIZEIBERICHT': '🚔',
+            'URTEIL': '⚖️',
+            'KLAGESCHRIFT': '📄',
+            'AKTE': '📁',
+            'SONSTIGES': '📎'
+        }
+        icon = typ_icons.get(typ, '📎')
+
+        # Verzweigung anzeigen
+        is_last = (i == len(inhaltsverzeichnis) - 1)
+        branch = "└──" if is_last else "├──"
+
+        # Dokument-Eintrag
+        col1, col2, col3 = st.columns([0.5, 3, 1])
+        with col1:
+            st.markdown(f"<span style='color: #999; font-family: monospace;'>{branch}</span>", unsafe_allow_html=True)
+        with col2:
+            st.markdown(f"{icon} **{titel}**")
+            st.caption(seiten_text)
+        with col3:
+            st.markdown(f"<span style='background-color: #e3f2fd; color: #1565c0; padding: 2px 8px; border-radius: 3px; font-size: 12px;'>{typ}</span>", unsafe_allow_html=True)
+
+
 def render_aktenimport():
     """Rendert die Aktenimport-Seite"""
     st.title("Aktenimport")
@@ -145,16 +254,14 @@ def _render_import_wizard():
                     }.get(methode, methode)
                     st.metric("Erkennungsmethode", methode_label)
 
-                # Erkanntes Inhaltsverzeichnis
+                # Erkanntes Inhaltsverzeichnis als Baum
                 inhaltsverzeichnis = vorschau.get('inhaltsverzeichnis', [])
                 if inhaltsverzeichnis:
-                    st.markdown("#### Erkanntes Inhaltsverzeichnis")
-
-                    for i, eintrag in enumerate(inhaltsverzeichnis):
-                        seiten = f"Seite {eintrag.get('seite_von', '?')}"
-                        if eintrag.get('seite_bis') != eintrag.get('seite_von'):
-                            seiten += f" - {eintrag.get('seite_bis', '?')}"
-                        st.write(f"{i+1}. **{eintrag.get('titel', 'Unbenannt')}** ({seiten}) - Typ: {eintrag.get('typ', 'SONSTIGES')}")
+                    st.markdown("#### Erkannte Dokumentstruktur")
+                    _render_inhaltsverzeichnis_baum(
+                        inhaltsverzeichnis,
+                        vorschau.get('anzahl_seiten', 0)
+                    )
 
                 # Wenn nur ein Dokument (Fallback), warnen
                 if methode == 'fallback_gesamt':
@@ -268,12 +375,13 @@ def _zeige_import_ergebnis(akten_import: AktenImport):
         if akten_import.extrahiertes_aktenzeichen:
             st.metric("Aktenzeichen", akten_import.extrahiertes_aktenzeichen)
 
-    # Inhaltsverzeichnis
+    # Inhaltsverzeichnis als Baum
     if akten_import.inhaltsverzeichnis:
-        st.markdown("#### Erkanntes Inhaltsverzeichnis")
-
-        for eintrag in akten_import.inhaltsverzeichnis:
-            st.write(f"- **{eintrag.get('titel', 'Dokument')}** (Seite {eintrag.get('seite_von', '?')} - {eintrag.get('seite_bis', '?')})")
+        st.markdown("#### Dokumentstruktur")
+        _render_inhaltsverzeichnis_baum(
+            akten_import.inhaltsverzeichnis,
+            akten_import.anzahl_seiten
+        )
 
     # Beteiligte
     if akten_import.beteiligte:
@@ -323,12 +431,13 @@ def _render_importierte_akten():
                     if imp.fehler_meldung:
                         st.error(f"Fehler: {imp.fehler_meldung}")
 
-                # Dokumente auflisten
-                if imp.dokumente:
-                    st.markdown("**Dokumente:**")
-                    for dok in imp.dokumente:
-                        meilenstein = "🎯 " if dok.ist_meilenstein else ""
-                        st.write(f"- {meilenstein}{dok.titel} (S. {dok.seite_von}-{dok.seite_bis})")
+                # Inhaltsverzeichnis als Baum anzeigen
+                if imp.inhaltsverzeichnis:
+                    st.markdown("**Dokumentstruktur:**")
+                    _render_inhaltsverzeichnis_baum(
+                        imp.inhaltsverzeichnis,
+                        imp.anzahl_seiten
+                    )
 
 
 def _render_beteiligte_einladungen():
