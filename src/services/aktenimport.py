@@ -276,11 +276,11 @@ class AktenImportService:
             'aktenzeichen': None,
             'inhaltsverzeichnis': [],
             'text_inhalt': '',
-            'lesezeichen': []
+            'lesezeichen': [],
+            'seiten_texte': []  # Text pro Seite
         }
 
         try:
-            # PyPDF2 oder pdfplumber verwenden
             import io
 
             try:
@@ -288,24 +288,32 @@ class AktenImportService:
                 pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_inhalt))
                 result['anzahl_seiten'] = len(pdf_reader.pages)
 
-                # Text extrahieren
+                # Text pro Seite extrahieren
                 text_gesamt = ""
-                for page in pdf_reader.pages:
-                    text_gesamt += page.extract_text() or ""
+                seiten_texte = []
+                for i, page in enumerate(pdf_reader.pages):
+                    seiten_text = page.extract_text() or ""
+                    seiten_texte.append({
+                        'seite': i + 1,
+                        'text': seiten_text
+                    })
+                    text_gesamt += f"\n--- Seite {i + 1} ---\n" + seiten_text
 
                 result['text_inhalt'] = text_gesamt
+                result['seiten_texte'] = seiten_texte
 
                 # Lesezeichen/Outlines extrahieren (falls vorhanden)
                 try:
                     if pdf_reader.outline:
-                        result['lesezeichen'] = self._parse_lesezeichen(pdf_reader.outline)
-                except:
-                    pass
+                        result['lesezeichen'] = self._parse_lesezeichen(pdf_reader, pdf_reader.outline)
+                except Exception as e:
+                    result['lesezeichen'] = []
 
             except ImportError:
-                # Fallback: Grundlegende Analyse ohne PyPDF2
+                # Fallback ohne PyPDF2
                 result['anzahl_seiten'] = 1
                 result['text_inhalt'] = ""
+                result['seiten_texte'] = []
 
             # Aktenzeichen suchen
             for pattern in self.AKTENZEICHEN_PATTERNS:
@@ -314,12 +322,25 @@ class AktenImportService:
                     result['aktenzeichen'] = match.group(1).strip()
                     break
 
-            # Inhaltsverzeichnis aus Text oder Lesezeichen erstellen
-            if result['lesezeichen']:
-                result['inhaltsverzeichnis'] = result['lesezeichen']
+            # Inhaltsverzeichnis erstellen
+            if result['lesezeichen'] and len(result['lesezeichen']) > 0:
+                # Lesezeichen gefunden - diese verwenden
+                result['inhaltsverzeichnis'] = self._lesezeichen_zu_inhaltsverzeichnis(
+                    result['lesezeichen'],
+                    result['anzahl_seiten']
+                )
             else:
-                result['inhaltsverzeichnis'] = self._extrahiere_inhaltsverzeichnis(
+                # Versuche Inhaltsverzeichnis aus Text zu extrahieren
+                result['inhaltsverzeichnis'] = self._extrahiere_inhaltsverzeichnis_aus_text(
                     result['text_inhalt'],
+                    result['seiten_texte'],
+                    result['anzahl_seiten']
+                )
+
+            # Wenn immer noch kein Inhaltsverzeichnis, seitenbasierte Analyse
+            if not result['inhaltsverzeichnis']:
+                result['inhaltsverzeichnis'] = self._analysiere_seiten_fuer_dokumente(
+                    result['seiten_texte'],
                     result['anzahl_seiten']
                 )
 
@@ -328,21 +349,36 @@ class AktenImportService:
 
         return result
 
-    def _parse_lesezeichen(self, outline, level: int = 0) -> List[Dict]:
-        """Parsed PDF-Lesezeichen rekursiv"""
+    def _parse_lesezeichen(self, pdf_reader, outline, level: int = 0) -> List[Dict]:
+        """Parsed PDF-Lesezeichen rekursiv mit Seitenzahl-Ermittlung"""
         result = []
 
         if isinstance(outline, list):
             for item in outline:
-                result.extend(self._parse_lesezeichen(item, level))
+                result.extend(self._parse_lesezeichen(pdf_reader, item, level))
         else:
             try:
                 titel = outline.title if hasattr(outline, 'title') else str(outline)
-                seite = outline.page.idnum if hasattr(outline, 'page') else 0
+
+                # Seitenzahl ermitteln
+                seite = 1
+                if hasattr(outline, 'page'):
+                    try:
+                        # PyPDF2 3.x
+                        page_obj = outline.page
+                        if page_obj:
+                            seite = pdf_reader.pages.index(page_obj) + 1
+                    except:
+                        try:
+                            # Alternativer Ansatz
+                            dest = pdf_reader.get_destination_page_number(outline)
+                            seite = dest + 1 if dest is not None else 1
+                        except:
+                            seite = 1
 
                 result.append({
                     'titel': titel,
-                    'seite': seite,
+                    'seite_von': seite,
                     'ebene': level
                 })
             except:
@@ -350,58 +386,224 @@ class AktenImportService:
 
         return result
 
-    def _extrahiere_inhaltsverzeichnis(self, text: str, anzahl_seiten: int) -> List[Dict]:
-        """Extrahiert ein Inhaltsverzeichnis aus dem Text"""
+    def _lesezeichen_zu_inhaltsverzeichnis(self, lesezeichen: List[Dict], anzahl_seiten: int) -> List[Dict]:
+        """Konvertiert Lesezeichen zu einem Inhaltsverzeichnis mit Seitenbereichen"""
+        if not lesezeichen:
+            return []
+
+        # Nach Seitenzahl sortieren
+        lesezeichen_sortiert = sorted(lesezeichen, key=lambda x: x.get('seite_von', 1))
+
+        inhaltsverzeichnis = []
+        for i, lz in enumerate(lesezeichen_sortiert):
+            typ = self._erkenne_dokumenttyp_aus_titel(lz.get('titel', ''))
+
+            eintrag = {
+                'position': i,
+                'titel': lz.get('titel', f'Dokument {i + 1}'),
+                'typ': typ,
+                'seite_von': lz.get('seite_von', 1),
+                'seite_bis': anzahl_seiten  # Wird unten korrigiert
+            }
+
+            # Seite bis = nächste Seite - 1
+            if i + 1 < len(lesezeichen_sortiert):
+                naechste_seite = lesezeichen_sortiert[i + 1].get('seite_von', anzahl_seiten)
+                eintrag['seite_bis'] = max(eintrag['seite_von'], naechste_seite - 1)
+
+            inhaltsverzeichnis.append(eintrag)
+
+        return inhaltsverzeichnis
+
+    def _erkenne_dokumenttyp_aus_titel(self, titel: str) -> str:
+        """Erkennt den Dokumenttyp aus dem Titel"""
+        titel_lower = titel.lower()
+
+        typ_mapping = {
+            'gutachten': 'GUTACHTEN',
+            'kostenvoranschlag': 'KOSTENVORANSCHLAG',
+            'rechnung': 'RECHNUNG',
+            'kürzung': 'KUERZUNGSSCHREIBEN',
+            'anspruch': 'ANSPRUCHSSCHREIBEN',
+            'vollmacht': 'VOLLMACHT',
+            'unfallbericht': 'UNFALLBERICHT',
+            'polizei': 'POLIZEIBERICHT',
+            'zeuge': 'ZEUGENAUSSAGE',
+            'foto': 'FOTOS',
+            'lichtbild': 'FOTOS',
+            'korrespondenz': 'KORRESPONDENZ',
+            'schreiben': 'KORRESPONDENZ',
+            'versicherung': 'VERSICHERUNGSSCHREIBEN',
+            'urteil': 'URTEIL',
+            'beschluss': 'BESCHLUSS',
+            'klage': 'KLAGESCHRIFT',
+            'erwiderung': 'KLAGEERWIDERUNG',
+            'fahrzeugschein': 'FAHRZEUGSCHEIN',
+            'brief': 'KORRESPONDENZ',
+            'anlage': 'ANLAGE',
+            'nachweis': 'NACHWEIS'
+        }
+
+        for keyword, typ in typ_mapping.items():
+            if keyword in titel_lower:
+                return typ
+
+        return 'SONSTIGES'
+
+    def _extrahiere_inhaltsverzeichnis_aus_text(
+        self,
+        text: str,
+        seiten_texte: List[Dict],
+        anzahl_seiten: int
+    ) -> List[Dict]:
+        """Extrahiert ein Inhaltsverzeichnis aus dem Text (sucht nach TOC-Struktur)"""
         inhaltsverzeichnis = []
 
-        # Typische Dokumenttypen in Unfallakten
-        dokumenttypen = [
-            ('Gutachten', 'GUTACHTEN'),
-            ('Kostenvoranschlag', 'KOSTENVORANSCHLAG'),
-            ('Rechnung', 'RECHNUNG'),
-            ('Kürzungsschreiben', 'KUERZUNGSSCHREIBEN'),
-            ('Anspruchsschreiben', 'ANSPRUCHSSCHREIBEN'),
-            ('Vollmacht', 'VOLLMACHT'),
-            ('Unfallbericht', 'UNFALLBERICHT'),
-            ('Polizeibericht', 'POLIZEIBERICHT'),
-            ('Zeugenaussage', 'ZEUGENAUSSAGE'),
-            ('Fotos', 'FOTOS'),
-            ('Korrespondenz', 'KORRESPONDENZ'),
-            ('Versicherungsschreiben', 'VERSICHERUNGSSCHREIBEN'),
-            ('Urteil', 'URTEIL'),
-            ('Beschluss', 'BESCHLUSS'),
-            ('Klageschrift', 'KLAGESCHRIFT'),
-            ('Klageerwiderung', 'KLAGEERWIDERUNG')
+        # Suche nach typischen Inhaltsverzeichnis-Mustern
+        # Format: "1. Gutachten .......... 5" oder "Anlage 1: Fotos Seite 10"
+        toc_patterns = [
+            r'(\d+[\.\)]\s*[A-Za-zäöüÄÖÜß\s\-]+)[\.…\s]+(\d+)',
+            r'([A-Za-zäöüÄÖÜß\s\-]+)[\s\.…]+(?:Seite|S\.|Bl\.)\s*(\d+)',
+            r'Anlage\s*(\d+)[:\s]*([A-Za-zäöüÄÖÜß\s\-]+)[^\d]*(\d+)?',
         ]
 
-        # Suche nach Dokumenttypen im Text
-        position = 0
-        for bezeichnung, typ in dokumenttypen:
-            pattern = rf'({bezeichnung})[^\n]*?(?:Seite|S\.|Bl\.)?[:\s]*(\d+)'
-            matches = re.finditer(pattern, text, re.IGNORECASE)
+        gefundene_eintraege = []
 
+        for pattern in toc_patterns:
+            matches = re.finditer(pattern, text, re.IGNORECASE | re.MULTILINE)
             for match in matches:
                 try:
-                    seite = int(match.group(2))
-                    if seite <= anzahl_seiten:
-                        inhaltsverzeichnis.append({
-                            'position': position,
-                            'titel': match.group(1),
-                            'typ': typ,
-                            'seite_von': seite,
-                            'seite_bis': seite  # Wird später berechnet
-                        })
-                        position += 1
+                    if len(match.groups()) >= 2:
+                        titel = match.group(1).strip()
+                        seite_str = match.group(2) if match.group(2) else "1"
+
+                        # Prüfen ob es eine Zahl ist
+                        try:
+                            seite = int(seite_str)
+                        except:
+                            seite = 1
+
+                        if 1 <= seite <= anzahl_seiten and len(titel) > 2:
+                            gefundene_eintraege.append({
+                                'titel': titel,
+                                'seite_von': seite
+                            })
                 except:
                     pass
 
-        # Seiten-Bereiche berechnen
-        inhaltsverzeichnis.sort(key=lambda x: x['seite_von'])
-        for i, eintrag in enumerate(inhaltsverzeichnis):
-            if i + 1 < len(inhaltsverzeichnis):
-                eintrag['seite_bis'] = inhaltsverzeichnis[i + 1]['seite_von'] - 1
-            else:
-                eintrag['seite_bis'] = anzahl_seiten
+        # Duplikate entfernen und sortieren
+        unique_eintraege = []
+        seen_seiten = set()
+        for eintrag in sorted(gefundene_eintraege, key=lambda x: x['seite_von']):
+            if eintrag['seite_von'] not in seen_seiten:
+                unique_eintraege.append(eintrag)
+                seen_seiten.add(eintrag['seite_von'])
+
+        # In Inhaltsverzeichnis konvertieren
+        for i, eintrag in enumerate(unique_eintraege):
+            typ = self._erkenne_dokumenttyp_aus_titel(eintrag['titel'])
+
+            iv_eintrag = {
+                'position': i,
+                'titel': eintrag['titel'],
+                'typ': typ,
+                'seite_von': eintrag['seite_von'],
+                'seite_bis': anzahl_seiten
+            }
+
+            if i + 1 < len(unique_eintraege):
+                iv_eintrag['seite_bis'] = unique_eintraege[i + 1]['seite_von'] - 1
+
+            inhaltsverzeichnis.append(iv_eintrag)
+
+        return inhaltsverzeichnis
+
+    def _analysiere_seiten_fuer_dokumente(
+        self,
+        seiten_texte: List[Dict],
+        anzahl_seiten: int
+    ) -> List[Dict]:
+        """Analysiert jede Seite um Dokumentgrenzen zu erkennen"""
+        if not seiten_texte or anzahl_seiten == 0:
+            return []
+
+        # Wenn nur eine Seite, ein Dokument
+        if anzahl_seiten == 1:
+            return [{
+                'position': 0,
+                'titel': 'Dokument 1',
+                'typ': 'SONSTIGES',
+                'seite_von': 1,
+                'seite_bis': 1
+            }]
+
+        inhaltsverzeichnis = []
+        aktuelles_dokument = None
+
+        # Schlüsselwörter die einen neuen Dokumentanfang signalisieren
+        dokument_start_keywords = [
+            r'^gutachten',
+            r'^rechnung',
+            r'^kostenvoranschlag',
+            r'^vollmacht',
+            r'^kfz.gutachten',
+            r'^schadensgutachten',
+            r'^kürzungsschreiben',
+            r'^anspruchsschreiben',
+            r'sehr geehrte',
+            r'^betreff:',
+            r'^unser zeichen',
+            r'^ihr zeichen',
+            r'^anlage\s*\d',
+        ]
+
+        for seiten_info in seiten_texte:
+            seite = seiten_info['seite']
+            text = seiten_info['text'].lower()[:500]  # Nur Anfang prüfen
+
+            # Prüfen ob neue Dokumentseite
+            ist_neues_dokument = False
+            erkannter_titel = None
+
+            for pattern in dokument_start_keywords:
+                if re.search(pattern, text, re.IGNORECASE | re.MULTILINE):
+                    ist_neues_dokument = True
+                    # Titel aus erstem Match extrahieren
+                    match = re.search(pattern + r'[^\n]*', text, re.IGNORECASE)
+                    if match:
+                        erkannter_titel = match.group(0).strip()[:50]
+                    break
+
+            if ist_neues_dokument or seite == 1:
+                # Vorheriges Dokument abschließen
+                if aktuelles_dokument:
+                    aktuelles_dokument['seite_bis'] = seite - 1
+                    inhaltsverzeichnis.append(aktuelles_dokument)
+
+                # Neues Dokument starten
+                typ = self._erkenne_dokumenttyp_aus_titel(erkannter_titel or "")
+                aktuelles_dokument = {
+                    'position': len(inhaltsverzeichnis),
+                    'titel': erkannter_titel or f'Dokument {len(inhaltsverzeichnis) + 1}',
+                    'typ': typ,
+                    'seite_von': seite,
+                    'seite_bis': anzahl_seiten
+                }
+
+        # Letztes Dokument hinzufügen
+        if aktuelles_dokument:
+            aktuelles_dokument['seite_bis'] = anzahl_seiten
+            inhaltsverzeichnis.append(aktuelles_dokument)
+
+        # Fallback: Wenn keine Dokumente erkannt, gesamtes PDF als ein Dokument
+        if not inhaltsverzeichnis:
+            inhaltsverzeichnis = [{
+                'position': 0,
+                'titel': 'Gesamtdokument',
+                'typ': 'AKTE',
+                'seite_von': 1,
+                'seite_bis': anzahl_seiten
+            }]
 
         return inhaltsverzeichnis
 
