@@ -29,8 +29,8 @@ class DokumentAnalyse(Base):
 
     id = Column(Integer, primary_key=True)
 
-    # Dokument-Zuordnung
-    dokument_id = Column(Integer, ForeignKey("dokument.id"), nullable=False)
+    # Dokument-Zuordnung (optional für reine Textanalysen)
+    dokument_id = Column(Integer, ForeignKey("dokument.id"), nullable=True)
 
     # Projekt-Zuordnung
     projekt_id = Column(Integer, ForeignKey("unfallprojekt.id"))

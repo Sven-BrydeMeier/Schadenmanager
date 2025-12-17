@@ -93,10 +93,11 @@ def _render_neue_analyse():
             service = KIAnalyseService(db)
 
             with st.spinner("Analysiere Dokument..."):
-                analyse = service.dokument_analysieren(
+                analyse = service.analysiere_dokument(
+                    dokument_id=None,
+                    text_inhalt=dokument_text,
                     projekt_id=projekt_id,
-                    dokument_text=dokument_text,
-                    analyse_typ=AnalyseTyp(analyse_typ)
+                    erstellt_von_user_id=st.session_state.get("user_id")
                 )
 
             st.success("Analyse abgeschlossen!")
@@ -112,12 +113,15 @@ def _zeige_analyse_ergebnis(analyse: DokumentAnalyse):
 
     col1, col2, col3 = st.columns(3)
 
+    # Schlüsselwörter als Liste parsen
+    keywords = [k.strip() for k in (analyse.schluesselwoerter or "").split(",") if k.strip()]
+
     with col1:
-        st.metric("Konfidenz", f"{analyse.konfidenz_score or 0}%")
+        st.metric("Analysetyp", analyse.analyse_typ.value if analyse.analyse_typ else "-")
     with col2:
-        st.metric("Extrahierte Beträge", len(analyse.extrahierte_betraege))
+        st.metric("Extrahierte Beträge", len(analyse.erkannte_betraege))
     with col3:
-        st.metric("Keywords", len(analyse.keywords))
+        st.metric("Keywords", len(keywords))
 
     # Zusammenfassung
     if analyse.zusammenfassung:
@@ -125,20 +129,20 @@ def _zeige_analyse_ergebnis(analyse: DokumentAnalyse):
         st.write(analyse.zusammenfassung)
 
     # Extrahierte Beträge
-    if analyse.extrahierte_betraege:
+    if analyse.erkannte_betraege:
         st.markdown("#### 💶 Extrahierte Beträge")
-        for betrag in analyse.extrahierte_betraege:
+        for betrag in analyse.erkannte_betraege:
             st.write(f"- **{betrag.get('beschreibung', 'Betrag')}**: {betrag.get('betrag', 0):,.2f} EUR")
 
     # Keywords
-    if analyse.keywords:
+    if keywords:
         st.markdown("#### 🏷️ Erkannte Keywords")
-        st.write(", ".join(analyse.keywords))
+        st.write(", ".join(keywords))
 
     # Strukturierte Daten
-    if analyse.strukturierte_daten:
+    if analyse.extrahierte_daten:
         st.markdown("#### 📋 Strukturierte Daten")
-        st.json(analyse.strukturierte_daten)
+        st.json(analyse.extrahierte_daten)
 
 
 def _render_analysen_uebersicht():
@@ -147,7 +151,7 @@ def _render_analysen_uebersicht():
 
     with get_session() as db:
         analysen = db.query(DokumentAnalyse).order_by(
-            DokumentAnalyse.analysiert_am.desc()
+            DokumentAnalyse.erstellt_am.desc()
         ).limit(50).all()
 
         if not analysen:
@@ -155,25 +159,25 @@ def _render_analysen_uebersicht():
             return
 
         for analyse in analysen:
-            with st.expander(
-                f"{analyse.analysiert_am.strftime('%d.%m.%Y %H:%M')} - "
-                f"{analyse.analyse_typ.value if analyse.analyse_typ else 'Unbekannt'}"
-            ):
+            datum_str = analyse.erstellt_am.strftime('%d.%m.%Y %H:%M') if analyse.erstellt_am else '-'
+            typ_str = analyse.analyse_typ.value if analyse.analyse_typ else 'Unbekannt'
+
+            with st.expander(f"{datum_str} - {typ_str}"):
                 col1, col2 = st.columns(2)
 
                 with col1:
                     st.write(f"**Projekt:** {analyse.projekt_id}")
-                    st.write(f"**Typ:** {analyse.analyse_typ.value if analyse.analyse_typ else '-'}")
-                    st.write(f"**Konfidenz:** {analyse.konfidenz_score or 0}%")
+                    st.write(f"**Typ:** {typ_str}")
 
                 with col2:
                     if analyse.zusammenfassung:
                         st.write("**Zusammenfassung:**")
-                        st.write(analyse.zusammenfassung[:200] + "..." if len(analyse.zusammenfassung or "") > 200 else analyse.zusammenfassung)
+                        zusammenfassung = analyse.zusammenfassung or ""
+                        st.write(zusammenfassung[:200] + "..." if len(zusammenfassung) > 200 else zusammenfassung)
 
-                if analyse.extrahierte_betraege:
+                if analyse.erkannte_betraege:
                     st.write("**Beträge:**")
-                    for betrag in analyse.extrahierte_betraege:
+                    for betrag in analyse.erkannte_betraege:
                         st.write(f"- {betrag.get('beschreibung')}: {betrag.get('betrag', 0):,.2f} EUR")
 
 
