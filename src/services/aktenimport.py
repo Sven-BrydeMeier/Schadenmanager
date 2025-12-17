@@ -189,21 +189,53 @@ class AktenImportService:
         r'(?:Az\.?|Aktenzeichen|AZ|Geschäftszeichen)[:\s]*([A-Za-z0-9\-/\.]+)',
         r'(\d{1,3}\s*[A-Z]{1,2}\s*\d{1,5}/\d{2,4})',  # Gerichtsaktenzeichen
         r'(?:Schaden(?:s)?(?:-)?Nr\.?|Schadensnummer)[:\s]*([A-Za-z0-9\-/]+)',
-        r'(?:Versicherungs(?:-)?Nr\.?)[:\s]*([A-Za-z0-9\-/]+)'
+        r'(?:Versicherungs(?:-)?Nr\.?)[:\s]*([A-Za-z0-9\-/]+)',
+        r'(?:Unser\s+Zeichen|Ihr\s+Zeichen)[:\s]*([A-Za-z0-9\-/\.]+)'
     ]
 
-    # Muster für Beteiligte
+    # Erweiterte Muster für Beteiligte im Aktenvorblatt
     BETEILIGTER_PATTERNS = {
         BeteiligtenRolle.GESCHAEDIGTER: [
-            r'(?:Geschädigt(?:er|e)|Anspruchsteller|Kläger)[:\s]*([A-Za-zäöüÄÖÜß\s\-]+)',
+            r'(?:Geschädigt(?:er|e)|Anspruchsteller|Kläger|Mandant(?:in)?)[:\s]*([^\n,;]+?)(?:\n|,|;|$)',
+            r'(?:Auftraggeber)[:\s]*([^\n,;]+?)(?:\n|,|;|$)',
         ],
         BeteiligtenRolle.UNFALLVERURSACHER: [
-            r'(?:Unfallverursacher|Schädiger|Beklagte(?:r)?)[:\s]*([A-Za-zäöüÄÖÜß\s\-]+)',
+            r'(?:Unfallverursacher|Schädiger|Beklagte(?:r)?|Unfallgegner)[:\s]*([^\n,;]+?)(?:\n|,|;|$)',
         ],
         BeteiligtenRolle.VERSICHERUNG_VERURSACHER: [
-            r'(?:Haftpflichtversicherung|gegnerische Versicherung)[:\s]*([A-Za-zäöüÄÖÜß\s\-]+)',
+            r'(?:Haftpflichtversicherung|gegnerische\s+Versicherung|Versicherung\s+des\s+(?:Unfallgegners|Schädigers))[:\s]*([^\n,;]+?)(?:\n|,|;|$)',
+            r'(?:Gegnerische\s+Haftpflicht)[:\s]*([^\n,;]+?)(?:\n|,|;|$)',
+        ],
+        BeteiligtenRolle.VERSICHERUNG_GESCHAEDIGTER: [
+            r'(?:Eigene\s+Versicherung|Kaskoversicherung|Vollkasko|Teilkasko)[:\s]*([^\n,;]+?)(?:\n|,|;|$)',
+        ],
+        BeteiligtenRolle.GUTACHTER: [
+            r'(?:Gutachter|Sachverständiger)[:\s]*([^\n,;]+?)(?:\n|,|;|$)',
+        ],
+        BeteiligtenRolle.WERKSTATT: [
+            r'(?:Werkstatt|Reparaturbetrieb|Autohaus)[:\s]*([^\n,;]+?)(?:\n|,|;|$)',
+        ],
+        BeteiligtenRolle.GEGNERISCHER_ANWALT: [
+            r'(?:Gegnerischer\s+(?:Anwalt|Rechtsanwalt)|Anwalt\s+des\s+(?:Gegners|Schädigers))[:\s]*([^\n,;]+?)(?:\n|,|;|$)',
+        ],
+        BeteiligtenRolle.ZEUGE: [
+            r'(?:Zeuge(?:n)?)[:\s]*([^\n,;]+?)(?:\n|,|;|$)',
         ]
     }
+
+    # Muster für Inhaltsverzeichnis-Einträge
+    INHALTSVERZEICHNIS_PATTERNS = [
+        # Format: "1. Gutachten ..... 5" oder "1. Gutachten ... Seite 5"
+        r'^[\s]*(\d+)[\.\)]\s*([^\.…\d][^\n]+?)[\.…\s]+(?:Seite\s*)?(\d+)\s*$',
+        # Format: "Anlage 1: Gutachten Seite 5-10"
+        r'^[\s]*(?:Anlage\s*)?(\d+)[:\.\)]\s*([^\n]+?)\s+(?:Seite\s*)?(\d+)(?:\s*[-–]\s*(\d+))?\s*$',
+        # Format: "Gutachten .............. 5"
+        r'^[\s]*([A-Za-zäöüÄÖÜß][^\n\.…]+?)[\.…\s]{3,}(\d+)\s*$',
+        # Format: "- Gutachten (Seite 5-10)"
+        r'^[\s]*[-•]\s*([^\n\(]+?)\s*\((?:Seite\s*)?(\d+)(?:\s*[-–]\s*(\d+))?\)\s*$',
+        # Format: "Blatt 5: Gutachten"
+        r'^[\s]*(?:Blatt|Bl\.)\s*(\d+)[:\s]+([^\n]+?)\s*$',
+    ]
 
     def __init__(self, db_session):
         self.db = db_session
@@ -245,10 +277,11 @@ class AktenImportService:
 
             akten_import.anzahl_dokumente = len(dokumente)
 
-            # Beteiligte extrahieren
+            # Beteiligte aus Aktenvorblatt extrahieren
             beteiligte = self._extrahiere_beteiligte(
                 akten_import,
-                pdf_analyse.get('text_inhalt', '')
+                pdf_analyse.get('text_inhalt', ''),
+                pdf_analyse.get('seiten_texte', [])
             )
 
             # Projekt aktualisieren wenn Aktenzeichen gefunden
@@ -450,6 +483,24 @@ class AktenImportService:
 
         return 'SONSTIGES'
 
+    def _finde_inhaltsverzeichnis_seite(self, seiten_texte: List[Dict]) -> Optional[int]:
+        """Findet die Seite mit dem Inhaltsverzeichnis"""
+        inhaltsverzeichnis_keywords = [
+            r'inhaltsverzeichnis',
+            r'inhalt\s*:',
+            r'gliederung',
+            r'übersicht',
+            r'dokumentenverzeichnis',
+            r'akteninhalt',
+        ]
+
+        for seiten_info in seiten_texte[:5]:  # Nur erste 5 Seiten prüfen
+            text_lower = seiten_info['text'].lower()
+            for keyword in inhaltsverzeichnis_keywords:
+                if re.search(keyword, text_lower):
+                    return seiten_info['seite']
+        return None
+
     def _extrahiere_inhaltsverzeichnis_aus_text(
         self,
         text: str,
@@ -457,49 +508,143 @@ class AktenImportService:
         anzahl_seiten: int
     ) -> List[Dict]:
         """Extrahiert ein Inhaltsverzeichnis aus dem Text (sucht nach TOC-Struktur)"""
-        inhaltsverzeichnis = []
 
-        # Suche nach typischen Inhaltsverzeichnis-Mustern
-        # Format: "1. Gutachten .......... 5" oder "Anlage 1: Fotos Seite 10"
-        toc_patterns = [
-            r'(\d+[\.\)]\s*[A-Za-zäöüÄÖÜß\s\-]+)[\.…\s]+(\d+)',
-            r'([A-Za-zäöüÄÖÜß\s\-]+)[\s\.…]+(?:Seite|S\.|Bl\.)\s*(\d+)',
-            r'Anlage\s*(\d+)[:\s]*([A-Za-zäöüÄÖÜß\s\-]+)[^\d]*(\d+)?',
-        ]
+        # Zuerst Inhaltsverzeichnis-Seite finden
+        toc_seite = self._finde_inhaltsverzeichnis_seite(seiten_texte)
+
+        toc_text = ""
+        if toc_seite:
+            # Nur Text der Inhaltsverzeichnis-Seite(n) verwenden
+            for seiten_info in seiten_texte:
+                if seiten_info['seite'] >= toc_seite and seiten_info['seite'] <= toc_seite + 1:
+                    toc_text += seiten_info['text'] + "\n"
+        else:
+            # Fallback: Ersten Teil des Dokuments durchsuchen
+            for seiten_info in seiten_texte[:5]:
+                toc_text += seiten_info['text'] + "\n"
 
         gefundene_eintraege = []
 
-        for pattern in toc_patterns:
-            matches = re.finditer(pattern, text, re.IGNORECASE | re.MULTILINE)
-            for match in matches:
-                try:
-                    if len(match.groups()) >= 2:
-                        titel = match.group(1).strip()
-                        seite_str = match.group(2) if match.group(2) else "1"
+        # Zeilen einzeln verarbeiten für bessere Mustererkennung
+        zeilen = toc_text.split('\n')
 
-                        # Prüfen ob es eine Zahl ist
-                        try:
-                            seite = int(seite_str)
-                        except:
-                            seite = 1
+        for zeile in zeilen:
+            zeile = zeile.strip()
+            if not zeile or len(zeile) < 3:
+                continue
 
-                        if 1 <= seite <= anzahl_seiten and len(titel) > 2:
-                            gefundene_eintraege.append({
-                                'titel': titel,
-                                'seite_von': seite
-                            })
-                except:
-                    pass
+            # Pattern 1: "1. Gutachten ..... 5" oder "1) Gutachten ... 5"
+            match = re.match(r'^(\d+)[\.\)]\s*(.+?)[\.…\s]+(\d+)\s*$', zeile)
+            if match:
+                position = int(match.group(1))
+                titel = match.group(2).strip().rstrip('.')
+                seite = int(match.group(3))
+                if 1 <= seite <= anzahl_seiten and len(titel) >= 2:
+                    gefundene_eintraege.append({
+                        'position': position,
+                        'titel': titel,
+                        'seite_von': seite
+                    })
+                continue
 
-        # Duplikate entfernen und sortieren
+            # Pattern 2: "Gutachten .............. 5" (ohne Nummerierung)
+            match = re.match(r'^([A-Za-zäöüÄÖÜß][^\.…\d]+?)\s*[\.…\s]{3,}(\d+)\s*$', zeile)
+            if match:
+                titel = match.group(1).strip()
+                seite = int(match.group(2))
+                if 1 <= seite <= anzahl_seiten and len(titel) >= 2:
+                    gefundene_eintraege.append({
+                        'position': len(gefundene_eintraege),
+                        'titel': titel,
+                        'seite_von': seite
+                    })
+                continue
+
+            # Pattern 3: "Anlage 1: Gutachten Seite 5" oder "Anlage 1 Gutachten 5"
+            match = re.match(r'^(?:Anlage\s*)?(\d+)[:\.\)]\s*(.+?)\s+(?:Seite\s*)?(\d+)(?:\s*[-–]\s*(\d+))?\s*$', zeile, re.IGNORECASE)
+            if match:
+                position = int(match.group(1))
+                titel = match.group(2).strip()
+                seite_von = int(match.group(3))
+                seite_bis = int(match.group(4)) if match.group(4) else None
+                if 1 <= seite_von <= anzahl_seiten and len(titel) >= 2:
+                    eintrag = {
+                        'position': position,
+                        'titel': titel,
+                        'seite_von': seite_von
+                    }
+                    if seite_bis and seite_bis <= anzahl_seiten:
+                        eintrag['seite_bis_explizit'] = seite_bis
+                    gefundene_eintraege.append(eintrag)
+                continue
+
+            # Pattern 4: "- Gutachten (Seite 5)" oder "• Gutachten (5-10)"
+            match = re.match(r'^[-•→]\s*(.+?)\s*\((?:Seite\s*)?(\d+)(?:\s*[-–]\s*(\d+))?\)\s*$', zeile)
+            if match:
+                titel = match.group(1).strip()
+                seite_von = int(match.group(2))
+                seite_bis = int(match.group(3)) if match.group(3) else None
+                if 1 <= seite_von <= anzahl_seiten and len(titel) >= 2:
+                    eintrag = {
+                        'position': len(gefundene_eintraege),
+                        'titel': titel,
+                        'seite_von': seite_von
+                    }
+                    if seite_bis and seite_bis <= anzahl_seiten:
+                        eintrag['seite_bis_explizit'] = seite_bis
+                    gefundene_eintraege.append(eintrag)
+                continue
+
+            # Pattern 5: "Seite 5-10: Gutachten" oder "S. 5: Gutachten"
+            match = re.match(r'^(?:Seite|S\.)\s*(\d+)(?:\s*[-–]\s*(\d+))?[:\s]+(.+?)\s*$', zeile, re.IGNORECASE)
+            if match:
+                seite_von = int(match.group(1))
+                seite_bis = int(match.group(2)) if match.group(2) else None
+                titel = match.group(3).strip()
+                if 1 <= seite_von <= anzahl_seiten and len(titel) >= 2:
+                    eintrag = {
+                        'position': len(gefundene_eintraege),
+                        'titel': titel,
+                        'seite_von': seite_von
+                    }
+                    if seite_bis and seite_bis <= anzahl_seiten:
+                        eintrag['seite_bis_explizit'] = seite_bis
+                    gefundene_eintraege.append(eintrag)
+                continue
+
+            # Pattern 6: "Blatt 5-10 Gutachten" (typisch für Gerichtsakten)
+            match = re.match(r'^(?:Blatt|Bl\.?)\s*(\d+)(?:\s*[-–]\s*(\d+))?[:\s]+(.+?)\s*$', zeile, re.IGNORECASE)
+            if match:
+                seite_von = int(match.group(1))
+                seite_bis = int(match.group(2)) if match.group(2) else None
+                titel = match.group(3).strip()
+                if 1 <= seite_von <= anzahl_seiten and len(titel) >= 2:
+                    eintrag = {
+                        'position': len(gefundene_eintraege),
+                        'titel': titel,
+                        'seite_von': seite_von
+                    }
+                    if seite_bis and seite_bis <= anzahl_seiten:
+                        eintrag['seite_bis_explizit'] = seite_bis
+                    gefundene_eintraege.append(eintrag)
+
+        # Wenn keine strukturierten Einträge gefunden, erweiterte Suche
+        if not gefundene_eintraege:
+            gefundene_eintraege = self._erweiterte_toc_suche(toc_text, anzahl_seiten)
+
+        # Nach Seitenzahl sortieren
+        gefundene_eintraege = sorted(gefundene_eintraege, key=lambda x: x['seite_von'])
+
+        # Duplikate entfernen (gleiche Startseite)
         unique_eintraege = []
         seen_seiten = set()
-        for eintrag in sorted(gefundene_eintraege, key=lambda x: x['seite_von']):
+        for eintrag in gefundene_eintraege:
             if eintrag['seite_von'] not in seen_seiten:
                 unique_eintraege.append(eintrag)
                 seen_seiten.add(eintrag['seite_von'])
 
-        # In Inhaltsverzeichnis konvertieren
+        # In Inhaltsverzeichnis mit korrekten Seitenbereichen konvertieren
+        inhaltsverzeichnis = []
         for i, eintrag in enumerate(unique_eintraege):
             typ = self._erkenne_dokumenttyp_aus_titel(eintrag['titel'])
 
@@ -508,15 +653,61 @@ class AktenImportService:
                 'titel': eintrag['titel'],
                 'typ': typ,
                 'seite_von': eintrag['seite_von'],
-                'seite_bis': anzahl_seiten
+                'seite_bis': anzahl_seiten  # Default: bis zum Ende
             }
 
-            if i + 1 < len(unique_eintraege):
+            # Wenn explizite Seite-bis angegeben, diese verwenden
+            if 'seite_bis_explizit' in eintrag:
+                iv_eintrag['seite_bis'] = eintrag['seite_bis_explizit']
+            # Sonst: Seite bis = nächste Seite - 1
+            elif i + 1 < len(unique_eintraege):
                 iv_eintrag['seite_bis'] = unique_eintraege[i + 1]['seite_von'] - 1
+
+            # Sicherstellen dass seite_bis >= seite_von
+            if iv_eintrag['seite_bis'] < iv_eintrag['seite_von']:
+                iv_eintrag['seite_bis'] = iv_eintrag['seite_von']
 
             inhaltsverzeichnis.append(iv_eintrag)
 
         return inhaltsverzeichnis
+
+    def _erweiterte_toc_suche(self, text: str, anzahl_seiten: int) -> List[Dict]:
+        """Erweiterte Suche nach Inhaltsverzeichnis-Einträgen"""
+        eintraege = []
+
+        # Suche nach Mustern im gesamten Text
+        patterns = [
+            # "1. Titel 5" oder "1) Titel 5"
+            (r'(\d+)[\.\)]\s*([A-Za-zäöüÄÖÜß][^\d\n]{2,50}?)\s+(\d+)(?:\s|$)', True),
+            # "Titel ... 5"
+            (r'([A-Za-zäöüÄÖÜß][^\n\.…]{2,40}?)[\.…]{2,}\s*(\d+)', False),
+        ]
+
+        for pattern, hat_position in patterns:
+            for match in re.finditer(pattern, text, re.MULTILINE):
+                try:
+                    if hat_position:
+                        position = int(match.group(1))
+                        titel = match.group(2).strip()
+                        seite = int(match.group(3))
+                    else:
+                        position = len(eintraege)
+                        titel = match.group(1).strip()
+                        seite = int(match.group(2))
+
+                    # Validierung
+                    if 1 <= seite <= anzahl_seiten and 2 <= len(titel) <= 100:
+                        # Keine reinen Zahlen oder kurze Wörter
+                        if not titel.isdigit() and not re.match(r'^\d', titel):
+                            eintraege.append({
+                                'position': position,
+                                'titel': titel,
+                                'seite_von': seite
+                            })
+                except:
+                    pass
+
+        return eintraege
 
     def _analysiere_seiten_fuer_dokumente(
         self,
@@ -706,39 +897,196 @@ class AktenImportService:
         except Exception:
             return None
 
+    def _finde_aktenvorblatt(self, seiten_texte: List[Dict]) -> str:
+        """Findet und extrahiert das Aktenvorblatt (typischerweise Seite 1-2)"""
+        aktenvorblatt_keywords = [
+            r'aktenvorblatt',
+            r'aktendeckblatt',
+            r'deckblatt',
+            r'stammdaten',
+            r'fallübersicht',
+            r'aktenzeichen',
+            r'geschädigter',
+            r'unfallgegner',
+            r'mandant',
+        ]
+
+        aktenvorblatt_text = ""
+
+        # Prüfe erste 3 Seiten
+        for seiten_info in seiten_texte[:3]:
+            text_lower = seiten_info['text'].lower()
+
+            # Zähle wie viele Keywords auf der Seite vorkommen
+            keyword_count = sum(1 for kw in aktenvorblatt_keywords if re.search(kw, text_lower))
+
+            # Wenn mindestens 2 Keywords gefunden, ist es wahrscheinlich das Aktenvorblatt
+            if keyword_count >= 2:
+                aktenvorblatt_text += seiten_info['text'] + "\n"
+
+        # Fallback: Wenn kein eindeutiges Aktenvorblatt, verwende Seite 1
+        if not aktenvorblatt_text and seiten_texte:
+            aktenvorblatt_text = seiten_texte[0]['text']
+
+        return aktenvorblatt_text
+
     def _extrahiere_beteiligte(
         self,
         akten_import: AktenImport,
-        text_inhalt: str
+        text_inhalt: str,
+        seiten_texte: List[Dict] = None
     ) -> List[AktenBeteiligter]:
-        """Extrahiert Beteiligte aus dem Text"""
+        """Extrahiert Beteiligte aus dem Aktenvorblatt"""
         beteiligte = []
+
+        # Aktenvorblatt-Text ermitteln
+        if seiten_texte:
+            aktenvorblatt_text = self._finde_aktenvorblatt(seiten_texte)
+        else:
+            # Fallback: Ersten Teil des Textes verwenden
+            aktenvorblatt_text = text_inhalt[:3000] if text_inhalt else ""
+
+        gefundene_namen = set()  # Um Duplikate zu vermeiden
 
         for rolle, patterns in self.BETEILIGTER_PATTERNS.items():
             for pattern in patterns:
-                match = re.search(pattern, text_inhalt, re.IGNORECASE)
-                if match:
+                matches = re.finditer(pattern, aktenvorblatt_text, re.IGNORECASE | re.MULTILINE)
+                for match in matches:
                     name = match.group(1).strip()
 
-                    # Namen aufteilen
-                    name_teile = name.split()
-                    vorname = name_teile[0] if name_teile else ""
-                    nachname = " ".join(name_teile[1:]) if len(name_teile) > 1 else name
+                    # Bereinigung
+                    name = self._bereinige_name(name)
+
+                    # Validierung
+                    if not name or len(name) < 2 or name.lower() in gefundene_namen:
+                        continue
+
+                    # Prüfen ob es ein gültiger Name ist (keine Seitenzahlen, etc.)
+                    if re.match(r'^[\d\s\-\.]+$', name):
+                        continue
+
+                    gefundene_namen.add(name.lower())
+
+                    # Namen und Adresse aufteilen
+                    name_info = self._parse_name_adresse(name)
 
                     beteiligter = AktenBeteiligter(
                         akten_import_id=akten_import.id,
                         projekt_id=akten_import.projekt_id,
                         rolle=rolle,
-                        vorname=vorname,
-                        name=nachname,
+                        vorname=name_info.get('vorname', ''),
+                        name=name_info.get('nachname', name),
+                        adresse=name_info.get('adresse'),
                         extrahiert_aus_pdf=True
                     )
 
                     self.db.add(beteiligter)
                     beteiligte.append(beteiligter)
-                    break  # Nur ersten Treffer pro Rolle
+                    break  # Nur ersten Treffer pro Pattern
+
+        # Zusätzlich: Tabellenbasierte Extraktion versuchen
+        tabellen_beteiligte = self._extrahiere_beteiligte_aus_tabelle(aktenvorblatt_text, akten_import, gefundene_namen)
+        beteiligte.extend(tabellen_beteiligte)
 
         self.db.flush()
+        return beteiligte
+
+    def _bereinige_name(self, name: str) -> str:
+        """Bereinigt einen extrahierten Namen"""
+        # Entferne führende/nachfolgende Leerzeichen und Sonderzeichen
+        name = name.strip(' \t\n\r:;,')
+
+        # Entferne häufige Störungen
+        name = re.sub(r'\s+', ' ', name)  # Mehrfache Leerzeichen
+        name = re.sub(r'^(Herr|Frau|Hr\.|Fr\.)\s+', '', name, flags=re.IGNORECASE)
+
+        # Kürze bei zu langen Einträgen (wahrscheinlich falsch erfasst)
+        if len(name) > 100:
+            # Versuche beim ersten Zeilenumbruch oder Komma abzuschneiden
+            for sep in ['\n', ',', ';']:
+                if sep in name:
+                    name = name.split(sep)[0].strip()
+                    break
+
+        return name[:100]  # Maximale Länge
+
+    def _parse_name_adresse(self, text: str) -> Dict[str, str]:
+        """Parst einen Text und trennt Name und Adresse"""
+        result = {'vorname': '', 'nachname': '', 'adresse': None}
+
+        # Versuche Adresse zu erkennen (PLZ-Muster)
+        adress_match = re.search(r'(\d{5}\s+[A-Za-zäöüÄÖÜß\s]+)', text)
+        if adress_match:
+            result['adresse'] = adress_match.group(1).strip()
+            text = text[:adress_match.start()].strip()
+
+        # Versuche Straße zu erkennen
+        strasse_match = re.search(r'([A-Za-zäöüÄÖÜß]+(?:straße|str\.|weg|platz|allee|ring)\s*\d*[a-zA-Z]?)', text, re.IGNORECASE)
+        if strasse_match:
+            strasse = strasse_match.group(1).strip()
+            if result['adresse']:
+                result['adresse'] = strasse + ', ' + result['adresse']
+            else:
+                result['adresse'] = strasse
+            text = text[:strasse_match.start()].strip()
+
+        # Namen aufteilen
+        name_teile = text.strip().split()
+        if len(name_teile) >= 2:
+            result['vorname'] = name_teile[0]
+            result['nachname'] = ' '.join(name_teile[1:])
+        elif len(name_teile) == 1:
+            result['nachname'] = name_teile[0]
+
+        return result
+
+    def _extrahiere_beteiligte_aus_tabelle(
+        self,
+        text: str,
+        akten_import: AktenImport,
+        bereits_gefunden: set
+    ) -> List[AktenBeteiligter]:
+        """Versucht Beteiligte aus tabellenartigen Strukturen zu extrahieren"""
+        beteiligte = []
+
+        # Typische Tabellen-Muster in Aktenvorblättern:
+        # "Geschädigter:     Max Mustermann"
+        # "Geschädigter      Max Mustermann"
+        # "| Geschädigter | Max Mustermann |"
+
+        tabellen_patterns = [
+            # Format: "Rolle:    Name" oder "Rolle     Name"
+            (r'(Geschädigter|Mandant|Auftraggeber)[\s:]+([A-Za-zäöüÄÖÜß][A-Za-zäöüÄÖÜß\s\-\.]+?)(?:\n|,|\d{5}|$)', BeteiligtenRolle.GESCHAEDIGTER),
+            (r'(Unfallgegner|Schädiger|Verursacher)[\s:]+([A-Za-zäöüÄÖÜß][A-Za-zäöüÄÖÜß\s\-\.]+?)(?:\n|,|\d{5}|$)', BeteiligtenRolle.UNFALLVERURSACHER),
+            (r'(Haftpflichtvers(?:icherung)?|Gegn\.?\s*Vers(?:icherung)?)[\s:]+([A-Za-zäöüÄÖÜß][A-Za-zäöüÄÖÜß\s\-\.]+?)(?:\n|,|\d{5}|$)', BeteiligtenRolle.VERSICHERUNG_VERURSACHER),
+            (r'(Gutachter|Sachverständiger)[\s:]+([A-Za-zäöüÄÖÜß][A-Za-zäöüÄÖÜß\s\-\.]+?)(?:\n|,|\d{5}|$)', BeteiligtenRolle.GUTACHTER),
+            (r'(Werkstatt|Autohaus|Reparaturbetrieb)[\s:]+([A-Za-zäöüÄÖÜß][A-Za-zäöüÄÖÜß\s\-\.]+?)(?:\n|,|\d{5}|$)', BeteiligtenRolle.WERKSTATT),
+        ]
+
+        for pattern, rolle in tabellen_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                name = match.group(2).strip()
+                name = self._bereinige_name(name)
+
+                if name and len(name) >= 2 and name.lower() not in bereits_gefunden:
+                    bereits_gefunden.add(name.lower())
+
+                    name_info = self._parse_name_adresse(name)
+
+                    beteiligter = AktenBeteiligter(
+                        akten_import_id=akten_import.id,
+                        projekt_id=akten_import.projekt_id,
+                        rolle=rolle,
+                        vorname=name_info.get('vorname', ''),
+                        name=name_info.get('nachname', name),
+                        adresse=name_info.get('adresse'),
+                        extrahiert_aus_pdf=True
+                    )
+
+                    self.db.add(beteiligter)
+                    beteiligte.append(beteiligter)
+
         return beteiligte
 
     def erstelle_einladung(
