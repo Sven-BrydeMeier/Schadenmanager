@@ -121,8 +121,7 @@ def _render_import_wizard():
                     projektnummer = f"P-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:4].upper()}"
 
                     neues_projekt = UnfallProjekt(
-                        projektnummer=projektnummer,
-                        erstellt_von_user_id=st.session_state.get("user_id", 1)
+                        projektnummer=projektnummer
                     )
                     db.add(neues_projekt)
                     db.flush()
