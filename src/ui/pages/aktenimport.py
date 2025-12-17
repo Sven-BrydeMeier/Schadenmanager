@@ -114,11 +114,19 @@ def _render_import_wizard():
 
                 # Neues Projekt erstellen falls nötig
                 if projekt_id == "NEU":
-                    from src.services.projekte import ProjektService
-                    projekt_service = ProjektService(db)
-                    neues_projekt = projekt_service.erstelle_projekt(
+                    from src.models import UnfallProjekt
+                    import uuid
+
+                    # Projektnummer generieren
+                    projektnummer = f"P-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:4].upper()}"
+
+                    neues_projekt = UnfallProjekt(
+                        projektnummer=projektnummer,
                         erstellt_von_user_id=st.session_state.get("user_id", 1)
                     )
+                    db.add(neues_projekt)
+                    db.flush()
+
                     projekt_id = neues_projekt.id
                     st.info(f"Neues Projekt erstellt: {neues_projekt.projektnummer}")
 
