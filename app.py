@@ -50,6 +50,7 @@ from src.ui.pages.backup import render_backup
 from src.ui.pages.mandanten import render_mandanten
 from src.ui.pages.themes import render_themes
 from src.ui.pages.gutachten_plausibilitaet import render_gutachten_plausibilitaet
+from src.ui.pages.aktenimport import render_aktenimport
 
 
 # Streamlit-Konfiguration
@@ -184,7 +185,8 @@ def render_sidebar(rolle: str) -> str:
 
         # ===== RECHTSBEREICH =====
         if rolle in ["ADMIN", "ANWALT"]:
-            with st.expander("⚖️ Rechtsbereich", expanded=aktuelle_seite in ["Ermittlungsakte", "Prozessmodul", "Fallberichte"]):
+            with st.expander("⚖️ Rechtsbereich", expanded=aktuelle_seite in ["Ermittlungsakte", "Prozessmodul", "Fallberichte", "Aktenimport"]):
+                menu_button("Aktenimport")
                 menu_button("Ermittlungsakte")
                 menu_button("Prozessmodul")
                 menu_button("Fallberichte")
@@ -486,6 +488,12 @@ def render_page(page: str, rolle: str):
 
     elif page == "Fallberichte":
         render_fallbericht()
+
+    elif page == "Aktenimport":
+        if rolle in ["ADMIN", "ANWALT"]:
+            render_aktenimport()
+        else:
+            st.error("Keine Berechtigung für diese Seite.")
 
     elif page == "Sprachnotizen":
         render_sprachnotizen()

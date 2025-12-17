@@ -48,6 +48,10 @@ from src.services.backup import Backup, BackupTyp, BackupStatus, ExportFormat
 from src.services.mandanten import Mandant, MandantBenutzer, MandantStatus, LizenzTyp
 from src.services.themes import BenutzerTheme, ThemeTyp
 from src.services.gutachten_plausibilitaet import GutachtenPruefung, PruefungsSchwere, PruefungsKategorie
+from src.services.aktenimport import (
+    AktenImport, AktenDokument, AktenBeteiligter, DokumentFreigabe, Einladung,
+    EinladungsStatus, BeteiligtenRolle
+)
 
 __all__ = [
     'Base',
@@ -89,5 +93,8 @@ __all__ = [
     'Mandant', 'MandantBenutzer', 'MandantStatus', 'LizenzTyp',
     'BenutzerTheme', 'ThemeTyp',
     # Gutachten-Plausibilitätsprüfung
-    'GutachtenPruefung', 'PruefungsSchwere', 'PruefungsKategorie'
+    'GutachtenPruefung', 'PruefungsSchwere', 'PruefungsKategorie',
+    # Aktenimport
+    'AktenImport', 'AktenDokument', 'AktenBeteiligter', 'DokumentFreigabe', 'Einladung',
+    'EinladungsStatus', 'BeteiligtenRolle'
 ]
