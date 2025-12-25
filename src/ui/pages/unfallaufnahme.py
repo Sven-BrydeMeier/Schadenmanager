@@ -74,7 +74,10 @@ def _ocr_ausweis(image_file) -> Optional[Dict]:
             'vorname': '',
             'nachname': '',
             'geburtsdatum': '',
-            'adresse': '',
+            'strasse': '',
+            'hausnummer': '',
+            'plz': '',
+            'ort': '',
             'ausweisnummer': ''
         }
 
@@ -83,40 +86,57 @@ def _ocr_ausweis(image_file) -> Optional[Dict]:
 
         # Gesamter Text für Regex-Suche
         full_text = ' '.join(lines)
-        full_text_upper = full_text.upper()
 
         # --- NACHNAME ---
         # Muster 1: "NACHNAME" gefolgt von Wert in nächster Zeile
         for i, line in enumerate(lines):
             line_upper = line.upper()
-            if ('NACHNAME' in line_upper or line_upper == 'NAME') and i + 1 < len(lines):
+            # Verschiedene Schreibweisen für Nachname
+            if any(kw in line_upper for kw in ['NACHNAME', 'FAMILIENNAME', 'SURNAME', 'NAME/']) and i + 1 < len(lines):
                 next_line = lines[i + 1].strip()
                 # Prüfen ob nächste Zeile ein Name ist (keine Zahl, kein Schlüsselwort)
-                if next_line and not any(kw in next_line.upper() for kw in ['VORNAME', 'GEBOREN', 'DATUM', 'GÜLTIG']):
+                if next_line and not any(kw in next_line.upper() for kw in ['VORNAME', 'GEBOREN', 'DATUM', 'GÜLTIG', 'GIVEN', 'FIRST']):
                     if not any(c.isdigit() for c in next_line[:5]):  # Keine Zahl am Anfang
-                        ergebnis['nachname'] = next_line.title()
-                        break
+                        # Nur Buchstaben und Bindestriche erlauben
+                        clean_name = re.sub(r'[^A-Za-zäöüÄÖÜß\-\s]', '', next_line)
+                        if clean_name:
+                            ergebnis['nachname'] = clean_name.title()
+                            break
 
         # Muster 2: "Nachname: WERT" oder "NACHNAME WERT" auf gleicher Zeile
         if not ergebnis['nachname']:
-            nachname_match = re.search(r'(?:NACHNAME|FAMILIENNAME)[:\s]+([A-ZÄÖÜa-zäöüß]+)', full_text, re.IGNORECASE)
+            nachname_match = re.search(r'(?:NACHNAME|FAMILIENNAME|SURNAME)[:\s]+([A-ZÄÖÜa-zäöüß\-]+)', full_text, re.IGNORECASE)
             if nachname_match:
                 ergebnis['nachname'] = nachname_match.group(1).title()
+
+        # Muster 3: Zeile die nur "NAME" enthält (ohne "VORNAME")
+        if not ergebnis['nachname']:
+            for i, line in enumerate(lines):
+                line_upper = line.upper().strip()
+                if line_upper == 'NAME' and i + 1 < len(lines):
+                    next_line = lines[i + 1].strip()
+                    if next_line and 'VORNAME' not in next_line.upper():
+                        clean_name = re.sub(r'[^A-Za-zäöüÄÖÜß\-\s]', '', next_line)
+                        if clean_name and len(clean_name) > 1:
+                            ergebnis['nachname'] = clean_name.title()
+                            break
 
         # --- VORNAME ---
         # Muster 1: "VORNAME" oder "VORNAMEN" gefolgt von Wert in nächster Zeile
         for i, line in enumerate(lines):
             line_upper = line.upper()
-            if ('VORNAME' in line_upper or 'VORNAMEN' in line_upper) and i + 1 < len(lines):
+            if any(kw in line_upper for kw in ['VORNAME', 'VORNAMEN', 'GIVEN NAME', 'FIRST NAME']) and i + 1 < len(lines):
                 next_line = lines[i + 1].strip()
-                if next_line and not any(kw in next_line.upper() for kw in ['NACHNAME', 'GEBOREN', 'DATUM', 'GÜLTIG', 'NAME']):
+                if next_line and not any(kw in next_line.upper() for kw in ['NACHNAME', 'GEBOREN', 'DATUM', 'GÜLTIG', 'NAME/', 'SURNAME']):
                     if not any(c.isdigit() for c in next_line[:5]):
-                        ergebnis['vorname'] = next_line.title()
-                        break
+                        clean_name = re.sub(r'[^A-Za-zäöüÄÖÜß\-\s]', '', next_line)
+                        if clean_name:
+                            ergebnis['vorname'] = clean_name.title()
+                            break
 
         # Muster 2: "Vorname: WERT" oder "VORNAME WERT" auf gleicher Zeile
         if not ergebnis['vorname']:
-            vorname_match = re.search(r'(?:VORNAME[N]?)[:\s]+([A-ZÄÖÜa-zäöüß]+)', full_text, re.IGNORECASE)
+            vorname_match = re.search(r'(?:VORNAME[N]?|GIVEN\s*NAME)[:\s]+([A-ZÄÖÜa-zäöüß\-]+)', full_text, re.IGNORECASE)
             if vorname_match:
                 ergebnis['vorname'] = vorname_match.group(1).title()
 
@@ -144,28 +164,25 @@ def _ocr_ausweis(image_file) -> Optional[Dict]:
                         ergebnis['ausweisnummer'] = potential_nr
                         break
 
-        # --- ADRESSE (PLZ + Ort) ---
+        # --- ADRESSE: Straße + Hausnummer ---
+        for line in lines:
+            # Format: Straßenname + Hausnummer (z.B. "Musterstraße 123" oder "Hauptstr. 45a")
+            strasse_match = re.search(r'([A-Za-zäöüÄÖÜß]+(?:straße|strasse|str\.|weg|platz|allee|ring|gasse|damm|ufer|chaussee))\s*(\d+\s*[a-zA-Z]?)', line, re.IGNORECASE)
+            if strasse_match and not ergebnis['strasse']:
+                ergebnis['strasse'] = strasse_match.group(1).title()
+                ergebnis['hausnummer'] = strasse_match.group(2).strip()
+                break
+
+        # --- ADRESSE: PLZ + Ort ---
         for line in lines:
             # Format: 5-stellige PLZ gefolgt von Ortsname
             plz_match = re.search(r'(\d{5})\s+([A-Za-zäöüÄÖÜß][A-Za-zäöüÄÖÜß\s\-]+)', line)
-            if plz_match and not ergebnis['adresse']:
-                plz = plz_match.group(1)
+            if plz_match and not ergebnis['plz']:
+                ergebnis['plz'] = plz_match.group(1)
                 ort = plz_match.group(2).strip()
                 # Ort sollte mindestens 2 Zeichen haben
                 if len(ort) >= 2:
-                    ergebnis['adresse'] = f"{plz} {ort}"
-                    break
-
-        # --- Straße suchen ---
-        for line in lines:
-            # Format: Straßenname + Hausnummer (z.B. "Musterstraße 123" oder "Hauptstr. 45a")
-            strasse_match = re.search(r'([A-Za-zäöüÄÖÜß]+(?:straße|str\.|weg|platz|allee|ring|gasse))\s*(\d+\s*[a-zA-Z]?)', line, re.IGNORECASE)
-            if strasse_match:
-                strasse = f"{strasse_match.group(1)} {strasse_match.group(2)}".strip()
-                if ergebnis['adresse']:
-                    ergebnis['adresse'] = f"{strasse}, {ergebnis['adresse']}"
-                else:
-                    ergebnis['adresse'] = strasse
+                    ergebnis['ort'] = ort.title()
                 break
 
         return ergebnis
@@ -995,7 +1012,14 @@ def _render_schritt_beteiligte():
                     col1, col2 = st.columns([3, 1])
                     with col1:
                         st.write(f"**Name:** {bet.get('vorname', '')} {bet.get('name', '')}")
-                        st.write(f"**Adresse:** {bet.get('adresse', '-')}")
+                        # Adresse strukturiert anzeigen
+                        adresse_teile = []
+                        if bet.get('strasse'):
+                            adresse_teile.append(f"{bet.get('strasse')} {bet.get('hausnummer', '')}".strip())
+                        if bet.get('plz') or bet.get('ort'):
+                            adresse_teile.append(f"{bet.get('plz', '')} {bet.get('ort', '')}".strip())
+                        adresse_display = ", ".join(adresse_teile) if adresse_teile else bet.get('adresse', '-')
+                        st.write(f"**Adresse:** {adresse_display}")
                         st.write(f"**Versicherung:** {bet.get('versicherung', '-')}")
                         st.write(f"**Kennzeichen:** {bet.get('kennzeichen', '-')}")
                     with col2:
@@ -1100,8 +1124,15 @@ def _render_schritt_beteiligte():
                                     st.session_state['neuer_vorname'] = ocr_ergebnis['vorname']
                                 if ocr_ergebnis.get('nachname'):
                                     st.session_state['neuer_name'] = ocr_ergebnis['nachname']
-                                if ocr_ergebnis.get('adresse'):
-                                    st.session_state['neue_adresse'] = ocr_ergebnis['adresse']
+                                # Adressfelder einzeln übertragen
+                                if ocr_ergebnis.get('strasse'):
+                                    st.session_state['neue_strasse'] = ocr_ergebnis['strasse']
+                                if ocr_ergebnis.get('hausnummer'):
+                                    st.session_state['neue_hausnummer'] = ocr_ergebnis['hausnummer']
+                                if ocr_ergebnis.get('plz'):
+                                    st.session_state['neue_plz'] = ocr_ergebnis['plz']
+                                if ocr_ergebnis.get('ort'):
+                                    st.session_state['neue_ort'] = ocr_ergebnis['ort']
 
                                 st.success("✅ Text erkannt! Die Felder wurden vorausgefüllt.")
                                 st.rerun()
@@ -1128,8 +1159,14 @@ def _render_schritt_beteiligte():
             st.session_state['neuer_vorname'] = ocr_ergebnis.get('vorname', '')
         if 'neuer_name' not in st.session_state:
             st.session_state['neuer_name'] = ocr_ergebnis.get('nachname', '')
-        if 'neue_adresse' not in st.session_state:
-            st.session_state['neue_adresse'] = ocr_ergebnis.get('adresse', '')
+        if 'neue_strasse' not in st.session_state:
+            st.session_state['neue_strasse'] = ocr_ergebnis.get('strasse', '')
+        if 'neue_hausnummer' not in st.session_state:
+            st.session_state['neue_hausnummer'] = ocr_ergebnis.get('hausnummer', '')
+        if 'neue_plz' not in st.session_state:
+            st.session_state['neue_plz'] = ocr_ergebnis.get('plz', '')
+        if 'neue_ort' not in st.session_state:
+            st.session_state['neue_ort'] = ocr_ergebnis.get('ort', '')
 
         col1, col2 = st.columns(2)
 
@@ -1174,11 +1211,36 @@ def _render_schritt_beteiligte():
             telefon = st.text_input("Telefon", key="neues_telefon", placeholder="0123 456789")
             email = st.text_input("E-Mail", key="neue_email", placeholder="max@beispiel.de")
 
-        adresse = st.text_input(
-            "Adresse",
-            key="neue_adresse",
-            placeholder="Musterstraße 123, 12345 Musterstadt"
-        )
+        # Adresse in einzelnen Feldern
+        st.markdown("##### Adresse")
+        col_str, col_nr = st.columns([3, 1])
+        with col_str:
+            strasse = st.text_input(
+                "Straße",
+                key="neue_strasse",
+                placeholder="Musterstraße"
+            )
+        with col_nr:
+            hausnummer = st.text_input(
+                "Hausnr.",
+                key="neue_hausnummer",
+                placeholder="123"
+            )
+
+        col_plz, col_ort = st.columns([1, 3])
+        with col_plz:
+            plz = st.text_input(
+                "PLZ",
+                key="neue_plz",
+                placeholder="12345",
+                max_chars=5
+            )
+        with col_ort:
+            ort = st.text_input(
+                "Ort",
+                key="neue_ort",
+                placeholder="Musterstadt"
+            )
 
         st.markdown("##### Versicherungsdaten")
 
@@ -1207,6 +1269,20 @@ def _render_schritt_beteiligte():
         # Beteiligten hinzufügen
         if st.button("✓ Beteiligten hinzufügen", type="primary"):
             if name:
+                # Adresse aus Einzelfeldern zusammensetzen
+                adresse_komplett = ""
+                if strasse:
+                    adresse_komplett = strasse
+                    if hausnummer:
+                        adresse_komplett += f" {hausnummer}"
+                if plz or ort:
+                    if adresse_komplett:
+                        adresse_komplett += ", "
+                    if plz:
+                        adresse_komplett += plz
+                    if ort:
+                        adresse_komplett += f" {ort}"
+
                 neuer_beteiligter = {
                     'rolle': rolle,
                     'vorname': vorname,
@@ -1214,7 +1290,11 @@ def _render_schritt_beteiligte():
                     'geburtsdatum': str(geburtsdatum) if geburtsdatum else None,
                     'telefon': telefon,
                     'email': email,
-                    'adresse': adresse,
+                    'strasse': strasse,
+                    'hausnummer': hausnummer,
+                    'plz': plz,
+                    'ort': ort,
+                    'adresse': adresse_komplett,  # Für Anzeige und Kompatibilität
                     'versicherung': versicherung,
                     'versicherungsnr': versicherungsnr,
                     'kennzeichen': kennzeichen
@@ -1226,6 +1306,14 @@ def _render_schritt_beteiligte():
                     if g['rolle'] == rolle and not g.get('erfasst', False):
                         g['erfasst'] = True
                         break
+
+                # Formularfelder zurücksetzen für nächsten Beteiligten
+                st.session_state.unfallaufnahme['ocr_ergebnis'] = {}
+                for key in ['neuer_vorname', 'neuer_name', 'neue_strasse', 'neue_hausnummer',
+                           'neue_plz', 'neue_ort', 'neues_telefon', 'neue_email',
+                           'neue_versicherung', 'neue_versicherungsnr', 'neues_kennzeichen']:
+                    if key in st.session_state:
+                        del st.session_state[key]
 
                 st.success(f"✓ {vorname} {name} wurde hinzugefügt")
                 st.rerun()
