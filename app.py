@@ -51,6 +51,7 @@ from src.ui.pages.mandanten import render_mandanten
 from src.ui.pages.themes import render_themes
 from src.ui.pages.gutachten_plausibilitaet import render_gutachten_plausibilitaet
 from src.ui.pages.aktenimport import render_aktenimport
+from src.ui.pages.unfallaufnahme import render_unfallaufnahme
 
 
 # Streamlit-Konfiguration
@@ -137,8 +138,9 @@ def render_sidebar(rolle: str) -> str:
         menu_button("Projekte")
         menu_button("Dokumente")
 
-        # Mandanten-Portal für Unfallopfer
+        # Menü für Unfallopfer
         if rolle == "UNFALLOPFER":
+            menu_button("Unfallaufnahme")
             menu_button("Mein Schadensfall")
 
         # ===== KOMMUNIKATION =====
@@ -422,6 +424,12 @@ def render_page(page: str, rolle: str):
 
     elif page == "Mein Schadensfall":
         render_mandanten_portal()
+
+    elif page == "Unfallaufnahme":
+        if rolle == "UNFALLOPFER":
+            render_unfallaufnahme()
+        else:
+            st.error("Diese Seite ist nur für Unfallopfer verfügbar.")
 
     elif page == "Papierkorb":
         render_papierkorb()
