@@ -48,7 +48,7 @@ def render_mandanten_portal():
         # Wenn mehrere Projekte, Auswahl anbieten
         if len(projekte) > 1:
             projekt_optionen = {
-                f"{p.aktenzeichen or p.projektnummer} - {p.unfalldatum.strftime('%d.%m.%Y') if p.unfalldatum else 'Unbekannt'}": p.id
+                f"{p.aktenzeichen or p.projektnummer} - {p.datum_unfall.strftime('%d.%m.%Y') if p.datum_unfall else 'Unbekannt'}": p.id
                 for p in projekte
             }
 
@@ -110,8 +110,8 @@ def _render_uebersicht(projekt: UnfallProjekt):
         st.markdown(f"**Aktenzeichen:** {projekt.aktenzeichen or projekt.projektnummer}")
 
     with col3:
-        if projekt.unfalldatum:
-            st.markdown(f"**Unfalldatum:** {projekt.unfalldatum.strftime('%d.%m.%Y')}")
+        if projekt.datum_unfall:
+            st.markdown(f"**Unfalldatum:** {projekt.datum_unfall.strftime('%d.%m.%Y')}")
 
     st.markdown("---")
 
@@ -121,20 +121,28 @@ def _render_uebersicht(projekt: UnfallProjekt):
     with col1:
         st.markdown("#### Unfalldaten")
 
-        if projekt.unfallort:
-            st.markdown(f"**Unfallort:** {projekt.unfallort}")
+        if projekt.ort_unfall:
+            st.markdown(f"**Unfallort:** {projekt.ort_unfall}")
 
-        if projekt.unfallhergang:
-            st.markdown(f"**Hergang:** {projekt.unfallhergang[:200]}..." if len(projekt.unfallhergang or "") > 200 else f"**Hergang:** {projekt.unfallhergang or 'Nicht angegeben'}")
+        if projekt.beschreibung_unfall:
+            beschreibung = projekt.beschreibung_unfall
+            st.markdown(f"**Hergang:** {beschreibung[:200]}..." if len(beschreibung) > 200 else f"**Hergang:** {beschreibung}")
 
-        if projekt.schuldfrage:
-            st.markdown(f"**Schuldfrage:** {projekt.schuldfrage}")
+        # Schuldfrage aus Prozent
+        if projekt.schuld_eigen_prozent is not None:
+            if projekt.schuld_eigen_prozent == 0:
+                schuld_text = "Keine Eigenschuld"
+            elif projekt.schuld_eigen_prozent == 100:
+                schuld_text = "Volle Eigenschuld"
+            else:
+                schuld_text = f"{projekt.schuld_eigen_prozent}% Eigenschuld"
+            st.markdown(f"**Schuldfrage:** {schuld_text}")
 
     with col2:
         st.markdown("#### Fahrzeug")
 
-        if projekt.fahrzeug:
-            fz = projekt.fahrzeug
+        if projekt.kfz_eigen:
+            fz = projekt.kfz_eigen
             st.markdown(f"**Fahrzeug:** {fz.hersteller} {fz.modell}")
             st.markdown(f"**Kennzeichen:** {fz.kennzeichen}")
             if fz.erstzulassung:
@@ -151,7 +159,7 @@ def _render_uebersicht(projekt: UnfallProjekt):
     if not projekt.dokumente or len([d for d in projekt.dokumente if d.dokument_typ == "VOLLMACHT"]) == 0:
         hinweise.append("Bitte unterschreiben Sie die Vollmacht und laden Sie diese hoch.")
 
-    if not projekt.fahrzeug:
+    if not projekt.kfz_eigen:
         hinweise.append("Fahrzeugdaten wurden noch nicht erfasst.")
 
     if hinweise:
