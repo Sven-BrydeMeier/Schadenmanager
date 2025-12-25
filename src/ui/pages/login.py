@@ -116,19 +116,32 @@ def render_login():
                         else:
                             st.error(fehler)
 
-        # Demo-Accounts anzeigen
-        st.markdown("""
-        <div class="demo-box">
-            <h4>Demo-Zugangsdaten</h4>
-            <div class="demo-credentials">
-                <strong>Admin:</strong> admin@demo.de / Demo123!<br>
-                <strong>Anwalt:</strong> anwalt@demo.de / Demo123!<br>
-                <strong>Werkstatt:</strong> werkstatt@demo.de / Demo123!<br>
-                <strong>Gutachter:</strong> gutachter@demo.de / Demo123!<br>
-                <strong>Unfallopfer:</strong> kunde@demo.de / Demo123!
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        # Demo-Schnellzugriff-Buttons
+        st.markdown("---")
+        st.markdown("### 🧪 Demo-Schnellzugriff")
+        st.caption("Klicken Sie auf eine Rolle, um sich direkt anzumelden:")
+
+        # Demo-Benutzer mit ihren Daten
+        demo_users = [
+            {"email": "admin@demo.de", "rolle": "ADMIN", "label": "👑 Administrator", "color": "#dc2626"},
+            {"email": "anwalt@demo.de", "rolle": "ANWALT", "label": "⚖️ Rechtsanwalt", "color": "#7c3aed"},
+            {"email": "werkstatt@demo.de", "rolle": "WERKSTATT", "label": "🔧 Werkstatt", "color": "#0891b2"},
+            {"email": "gutachter@demo.de", "rolle": "GUTACHTER", "label": "📋 Gutachter", "color": "#059669"},
+            {"email": "kunde@demo.de", "rolle": "UNFALLOPFER", "label": "🚗 Unfallopfer", "color": "#d97706"},
+        ]
+
+        # Zwei Spalten für die Buttons
+        col_left, col_right = st.columns(2)
+
+        for i, demo_user in enumerate(demo_users):
+            with col_left if i % 2 == 0 else col_right:
+                if st.button(
+                    demo_user["label"],
+                    key=f"demo_{demo_user['rolle']}",
+                    use_container_width=True,
+                    type="secondary"
+                ):
+                    _demo_login(demo_user["email"])
 
         # Link zur Registrierung
         st.markdown("---")
@@ -250,6 +263,22 @@ def _complete_login(user, db: Session, auth_service: AuthService):
     st.session_state["user_rolle"] = user.rolle.value
     st.session_state["user_organisation_id"] = user.organisation_id
     st.session_state["logged_in"] = True
+
+
+def _demo_login(email: str):
+    """Führt einen Demo-Login durch (ohne Passwort-Eingabe)"""
+    from src.models import User
+
+    with get_session() as db:
+        auth_service = AuthService(db)
+        user = db.query(User).filter(User.email == email).first()
+
+        if user:
+            # Demo-Login ohne 2FA
+            _complete_login(user, db, auth_service)
+            st.rerun()
+        else:
+            st.error(f"Demo-Benutzer {email} nicht gefunden. Bitte Demo-Daten erstellen.")
 
 
 def _clear_2fa_state():
