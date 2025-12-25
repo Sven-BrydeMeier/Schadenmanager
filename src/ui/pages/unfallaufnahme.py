@@ -31,6 +31,7 @@ except Exception as e:
 def _ocr_ausweis(image_file) -> Optional[Dict]:
     """
     Führt OCR auf einem Ausweis-Foto durch und extrahiert relevante Daten.
+    Unterstützt deutsche Personalausweise und Führerscheine.
 
     Args:
         image_file: Hochgeladene Bilddatei (Streamlit UploadedFile)
@@ -42,18 +43,34 @@ def _ocr_ausweis(image_file) -> Optional[Dict]:
         return None
 
     try:
-        # Bild öffnen
+        from PIL import Image, ImageEnhance, ImageFilter
+
+        # Bild öffnen und vorverarbeiten für bessere OCR
         image = Image.open(image_file)
 
-        # OCR durchführen (Deutsch)
-        text = pytesseract.image_to_string(image, lang='deu')
+        # Bild in Graustufen konvertieren und Kontrast erhöhen
+        if image.mode != 'L':
+            image_gray = image.convert('L')
+        else:
+            image_gray = image
 
-        if not text.strip():
+        # Kontrast erhöhen
+        enhancer = ImageEnhance.Contrast(image_gray)
+        image_enhanced = enhancer.enhance(1.5)
+
+        # OCR durchführen (Deutsch) - sowohl auf Original als auch auf verbessertem Bild
+        text = pytesseract.image_to_string(image, lang='deu')
+        text_enhanced = pytesseract.image_to_string(image_enhanced, lang='deu')
+
+        # Beide Texte kombinieren für bessere Ergebnisse
+        combined_text = text + "\n" + text_enhanced
+
+        if not combined_text.strip():
             return None
 
         # Erkannte Daten parsen
         ergebnis = {
-            'raw_text': text,
+            'raw_text': text,  # Original für Debug
             'vorname': '',
             'nachname': '',
             'geburtsdatum': '',
@@ -61,42 +78,95 @@ def _ocr_ausweis(image_file) -> Optional[Dict]:
             'ausweisnummer': ''
         }
 
-        lines = text.split('\n')
+        lines = combined_text.split('\n')
         lines = [l.strip() for l in lines if l.strip()]
 
-        # Muster für deutsche Personalausweise
+        # Gesamter Text für Regex-Suche
+        full_text = ' '.join(lines)
+        full_text_upper = full_text.upper()
+
+        # --- NACHNAME ---
+        # Muster 1: "NACHNAME" gefolgt von Wert in nächster Zeile
         for i, line in enumerate(lines):
             line_upper = line.upper()
+            if ('NACHNAME' in line_upper or line_upper == 'NAME') and i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+                # Prüfen ob nächste Zeile ein Name ist (keine Zahl, kein Schlüsselwort)
+                if next_line and not any(kw in next_line.upper() for kw in ['VORNAME', 'GEBOREN', 'DATUM', 'GÜLTIG']):
+                    if not any(c.isdigit() for c in next_line[:5]):  # Keine Zahl am Anfang
+                        ergebnis['nachname'] = next_line.title()
+                        break
 
-            # Nachname (oft nach "NACHNAME" oder "NAME")
-            if 'NACHNAME' in line_upper or (line_upper == 'NAME' and i + 1 < len(lines)):
-                if i + 1 < len(lines):
-                    ergebnis['nachname'] = lines[i + 1].title()
+        # Muster 2: "Nachname: WERT" oder "NACHNAME WERT" auf gleicher Zeile
+        if not ergebnis['nachname']:
+            nachname_match = re.search(r'(?:NACHNAME|FAMILIENNAME)[:\s]+([A-ZÄÖÜa-zäöüß]+)', full_text, re.IGNORECASE)
+            if nachname_match:
+                ergebnis['nachname'] = nachname_match.group(1).title()
 
-            # Vorname
-            if 'VORNAME' in line_upper or 'VORNAMEN' in line_upper:
-                if i + 1 < len(lines):
-                    ergebnis['vorname'] = lines[i + 1].title()
+        # --- VORNAME ---
+        # Muster 1: "VORNAME" oder "VORNAMEN" gefolgt von Wert in nächster Zeile
+        for i, line in enumerate(lines):
+            line_upper = line.upper()
+            if ('VORNAME' in line_upper or 'VORNAMEN' in line_upper) and i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+                if next_line and not any(kw in next_line.upper() for kw in ['NACHNAME', 'GEBOREN', 'DATUM', 'GÜLTIG', 'NAME']):
+                    if not any(c.isdigit() for c in next_line[:5]):
+                        ergebnis['vorname'] = next_line.title()
+                        break
 
-            # Geburtsdatum (Format: DD.MM.YYYY)
+        # Muster 2: "Vorname: WERT" oder "VORNAME WERT" auf gleicher Zeile
+        if not ergebnis['vorname']:
+            vorname_match = re.search(r'(?:VORNAME[N]?)[:\s]+([A-ZÄÖÜa-zäöüß]+)', full_text, re.IGNORECASE)
+            if vorname_match:
+                ergebnis['vorname'] = vorname_match.group(1).title()
+
+        # --- GEBURTSDATUM ---
+        # Verschiedene Datumsformate suchen
+        for line in lines:
+            # Format: DD.MM.YYYY oder DD-MM-YYYY oder DD/MM/YYYY
             datum_match = re.search(r'(\d{2})[.\-/](\d{2})[.\-/](\d{4})', line)
             if datum_match and not ergebnis['geburtsdatum']:
                 tag, monat, jahr = datum_match.groups()
-                if 1 <= int(tag) <= 31 and 1 <= int(monat) <= 12 and 1900 <= int(jahr) <= 2020:
+                if 1 <= int(tag) <= 31 and 1 <= int(monat) <= 12 and 1900 <= int(jahr) <= 2025:
                     ergebnis['geburtsdatum'] = f"{tag}.{monat}.{jahr}"
+                    break
 
-            # Ausweisnummer (typisches Format für deutschen Personalausweis)
-            ausweis_match = re.search(r'([A-Z0-9]{9,10})', line)
+        # --- AUSWEISNUMMER ---
+        for line in lines:
+            # Deutsches Personalausweis-Format (z.B. L01X00T47)
+            ausweis_match = re.search(r'\b([A-Z0-9]{9,10})\b', line.upper())
             if ausweis_match and not ergebnis['ausweisnummer']:
                 potential_nr = ausweis_match.group(1)
-                # Prüfen ob es wie eine Ausweisnummer aussieht (mix aus Buchstaben und Zahlen)
+                # Muss Buchstaben UND Zahlen enthalten
                 if any(c.isalpha() for c in potential_nr) and any(c.isdigit() for c in potential_nr):
-                    ergebnis['ausweisnummer'] = potential_nr
+                    # Nicht nur Buchstaben die wie Zahlen aussehen
+                    if potential_nr not in ['DEUTSCHLAND', 'BUNDESREPUB', 'PERSONALAUS']:
+                        ergebnis['ausweisnummer'] = potential_nr
+                        break
 
-            # Adresse (PLZ + Ort)
-            plz_match = re.search(r'(\d{5})\s+([A-Za-zäöüÄÖÜß\s]+)', line)
+        # --- ADRESSE (PLZ + Ort) ---
+        for line in lines:
+            # Format: 5-stellige PLZ gefolgt von Ortsname
+            plz_match = re.search(r'(\d{5})\s+([A-Za-zäöüÄÖÜß][A-Za-zäöüÄÖÜß\s\-]+)', line)
             if plz_match and not ergebnis['adresse']:
-                ergebnis['adresse'] = f"{plz_match.group(1)} {plz_match.group(2).strip()}"
+                plz = plz_match.group(1)
+                ort = plz_match.group(2).strip()
+                # Ort sollte mindestens 2 Zeichen haben
+                if len(ort) >= 2:
+                    ergebnis['adresse'] = f"{plz} {ort}"
+                    break
+
+        # --- Straße suchen ---
+        for line in lines:
+            # Format: Straßenname + Hausnummer (z.B. "Musterstraße 123" oder "Hauptstr. 45a")
+            strasse_match = re.search(r'([A-Za-zäöüÄÖÜß]+(?:straße|str\.|weg|platz|allee|ring|gasse))\s*(\d+\s*[a-zA-Z]?)', line, re.IGNORECASE)
+            if strasse_match:
+                strasse = f"{strasse_match.group(1)} {strasse_match.group(2)}".strip()
+                if ergebnis['adresse']:
+                    ergebnis['adresse'] = f"{strasse}, {ergebnis['adresse']}"
+                else:
+                    ergebnis['adresse'] = strasse
+                break
 
         return ergebnis
 
