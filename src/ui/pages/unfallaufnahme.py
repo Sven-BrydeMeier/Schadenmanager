@@ -7,8 +7,87 @@ import streamlit.components.v1 as components
 from datetime import datetime, date, time
 from typing import Optional, Dict, List
 import json
+import requests
 
 from src.config.database import get_session
+
+
+def _reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
+    """
+    Ermittelt die Adresse aus GPS-Koordinaten via OpenStreetMap Nominatim API.
+
+    Args:
+        lat: Breitengrad
+        lng: Längengrad
+
+    Returns:
+        Dictionary mit Adressdaten oder None bei Fehler
+    """
+    try:
+        url = f"https://nominatim.openstreetmap.org/reverse"
+        params = {
+            "lat": lat,
+            "lon": lng,
+            "format": "json",
+            "addressdetails": 1,
+            "accept-language": "de"
+        }
+        headers = {
+            "User-Agent": "Schadenmanager/1.0 (Unfallaufnahme)"
+        }
+
+        response = requests.get(url, params=params, headers=headers, timeout=5)
+
+        if response.status_code == 200:
+            data = response.json()
+            address = data.get("address", {})
+
+            # Straße ermitteln (verschiedene Felder prüfen)
+            strasse = (
+                address.get("road") or
+                address.get("pedestrian") or
+                address.get("footway") or
+                address.get("street") or
+                ""
+            )
+
+            # Hausnummer
+            hausnummer = address.get("house_number", "")
+
+            # PLZ
+            plz = address.get("postcode", "")
+
+            # Ort ermitteln (Stadt, Gemeinde, Dorf)
+            ort = (
+                address.get("city") or
+                address.get("town") or
+                address.get("village") or
+                address.get("municipality") or
+                address.get("county") or
+                ""
+            )
+
+            # Ortsteil/Stadtteil (optional)
+            ortsteil = (
+                address.get("suburb") or
+                address.get("neighbourhood") or
+                address.get("quarter") or
+                ""
+            )
+
+            return {
+                "strasse": strasse,
+                "hausnummer": hausnummer,
+                "plz": plz,
+                "ort": ort,
+                "ortsteil": ortsteil,
+                "display_name": data.get("display_name", ""),
+                "raw": address
+            }
+    except Exception as e:
+        st.warning(f"Adressermittlung fehlgeschlagen: {e}")
+
+    return None
 
 
 def render_unfallaufnahme():
@@ -122,28 +201,44 @@ def render_unfallaufnahme():
     fortschritt = st.session_state.unfallaufnahme.get('schritt', 1)
     st.progress(fortschritt / 5, text=f"Schritt {fortschritt} von 5")
 
-    # Tabs für die Schritte
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "1. Wann & Wo",
-        "2. Fotos Unfallort",
-        "3. Beteiligte",
-        "4. Kennzeichen",
-        "5. Abschluss"
-    ])
+    # Schritt-Anzeige als klickbare Buttons
+    schritt_namen = ["Wann & Wo", "Fotos", "Beteiligte", "Kennzeichen", "Abschluss"]
 
-    with tab1:
+    cols = st.columns(5)
+    for i, (col, name) in enumerate(zip(cols, schritt_namen), 1):
+        with col:
+            if i < fortschritt:
+                # Abgeschlossener Schritt - klickbar
+                if st.button(f"✓ {i}", key=f"nav_{i}", help=name, use_container_width=True):
+                    st.session_state.unfallaufnahme['schritt'] = i
+                    st.rerun()
+            elif i == fortschritt:
+                # Aktueller Schritt
+                st.markdown(f"""
+                <div style="background: #667eea; color: white; padding: 8px; border-radius: 8px; text-align: center; font-weight: bold;">
+                    {i}. {name}
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                # Zukünftiger Schritt
+                st.markdown(f"""
+                <div style="background: #e5e7eb; color: #9ca3af; padding: 8px; border-radius: 8px; text-align: center;">
+                    {i}
+                </div>
+                """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Konditionelles Rendern basierend auf aktuellem Schritt
+    if fortschritt == 1:
         _render_schritt_wann_wo()
-
-    with tab2:
+    elif fortschritt == 2:
         _render_schritt_fotos()
-
-    with tab3:
+    elif fortschritt == 3:
         _render_schritt_beteiligte()
-
-    with tab4:
+    elif fortschritt == 4:
         _render_schritt_kennzeichen()
-
-    with tab5:
+    elif fortschritt == 5:
         _render_schritt_abschluss()
 
 
@@ -195,6 +290,7 @@ def _render_schritt_wann_wo():
         <div class="info-box">
             <strong>📍 Standorterfassung</strong><br>
             Klicken Sie auf den Button und erlauben Sie den Standortzugriff in Ihrem Browser.
+            Die Adresse wird automatisch ermittelt.
         </div>
         """, unsafe_allow_html=True)
 
@@ -244,12 +340,21 @@ def _render_schritt_wann_wo():
                         btn.innerHTML = '✓ Standort erfasst';
                         btn.style.backgroundColor = '#059669';
 
-                        // Koordinaten in verstecktes Feld kopieren
-                        var coordInput = parent.document.querySelector('input[data-testid="stTextInput"][aria-label="GPS-Koordinaten"]');
-                        if (coordInput) {
-                            coordInput.value = lat + ', ' + lng;
-                            coordInput.dispatchEvent(new Event('input', { bubbles: true }));
-                        }
+                        // Koordinaten in Session State speichern via URL-Parameter-Trick
+                        // Wir speichern in localStorage und lesen es später aus
+                        localStorage.setItem('unfallort_gps', lat + ',' + lng);
+
+                        // Koordinaten in Input-Feld eintragen
+                        setTimeout(function() {
+                            var inputs = parent.document.querySelectorAll('input');
+                            inputs.forEach(function(input) {
+                                if (input.placeholder && input.placeholder.includes('automatisch erfasst')) {
+                                    input.value = lat + ', ' + lng;
+                                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                                }
+                            });
+                        }, 100);
                     },
                     function(err) {
                         error.innerHTML = 'Fehler: ' + err.message + '<br>Bitte geben Sie die Adresse manuell ein.';
@@ -286,6 +391,41 @@ def _render_schritt_wann_wo():
             # Google Maps Link
             coords_clean = gps_koordinaten.replace(" ", "")
             st.markdown(f"[📍 In Google Maps anzeigen](https://www.google.com/maps?q={coords_clean})")
+
+            # Button zum Ermitteln der Adresse aus Koordinaten
+            if st.button("🏠 Adresse aus Koordinaten ermitteln", key="reverse_geocode_btn"):
+                try:
+                    # Koordinaten parsen
+                    parts = gps_koordinaten.replace(" ", "").split(",")
+                    if len(parts) == 2:
+                        lat = float(parts[0])
+                        lng = float(parts[1])
+
+                        with st.spinner("Ermittle Adresse..."):
+                            adresse = _reverse_geocode(lat, lng)
+
+                        if adresse:
+                            # Adressfelder im Session State aktualisieren
+                            st.session_state.unfallaufnahme['ort_details'] = {
+                                'strasse': adresse.get('strasse', ''),
+                                'hausnummer': adresse.get('hausnummer', ''),
+                                'plz': adresse.get('plz', ''),
+                                'ort': adresse.get('ort', ''),
+                                'ortsteil': adresse.get('ortsteil', '')
+                            }
+                            st.session_state.unfallaufnahme['adresse_ermittelt'] = True
+                            st.success(f"✓ Adresse ermittelt: {adresse.get('display_name', '')}")
+                            st.rerun()
+                        else:
+                            st.warning("Adresse konnte nicht ermittelt werden. Bitte manuell eingeben.")
+                    else:
+                        st.error("Ungültiges Koordinatenformat. Erwartet: Breitengrad, Längengrad")
+                except ValueError:
+                    st.error("Ungültiges Koordinatenformat. Bitte im Format '52.520008, 13.404954' eingeben.")
+
+            # Info-Box wenn Adresse ermittelt wurde
+            if st.session_state.unfallaufnahme.get('adresse_ermittelt'):
+                st.info("✓ Die Adressfelder unten wurden automatisch ausgefüllt. Bitte prüfen und ggf. korrigieren.")
 
     # Manuelle Adresseingabe (immer anzeigen)
     st.markdown("#### Adresse")
