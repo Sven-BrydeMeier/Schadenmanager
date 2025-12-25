@@ -13,12 +13,19 @@ import re
 from src.config.database import get_session
 
 # OCR-Imports (optional, falls verfügbar)
+OCR_AVAILABLE = False
+TESSERACT_ERROR = None
+
 try:
     from PIL import Image
     import pytesseract
+    # Prüfe ob Tesseract tatsächlich installiert ist
+    pytesseract.get_tesseract_version()
     OCR_AVAILABLE = True
-except ImportError:
-    OCR_AVAILABLE = False
+except ImportError as e:
+    TESSERACT_ERROR = f"Python-Modul fehlt: {e}"
+except Exception as e:
+    TESSERACT_ERROR = str(e)
 
 
 def _ocr_ausweis(image_file) -> Optional[Dict]:
@@ -995,7 +1002,8 @@ def _render_schritt_beteiligte():
                                 for text in ocr_texte:
                                     st.text(text)
                 else:
-                    st.warning("⚠️ OCR-Bibliothek nicht verfügbar. Bitte Daten manuell eingeben.")
+                    st.error(f"❌ OCR nicht verfügbar: {TESSERACT_ERROR or 'Unbekannter Fehler'}")
+                    st.info("💡 **Lösung:** Auf dem Server muss 'tesseract-ocr' installiert werden (packages.txt wurde erstellt).")
 
                 # Zeige OCR-Ergebnisse wenn vorhanden
                 if ocr_ergebnis.get('vorname') or ocr_ergebnis.get('nachname'):
