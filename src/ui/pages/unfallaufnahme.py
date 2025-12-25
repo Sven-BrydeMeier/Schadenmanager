@@ -119,7 +119,13 @@ def _reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
     """
     fehler_details = []
 
-    # Versuch 1: OpenStreetMap Nominatim
+    # Session ohne Proxy erstellen für direkte Verbindung
+    session = requests.Session()
+    # Proxy explizit deaktivieren
+    session.trust_env = False
+    session.proxies = {"http": None, "https": None}
+
+    # Versuch 1: OpenStreetMap Nominatim (ohne Proxy)
     try:
         url = "https://nominatim.openstreetmap.org/reverse"
         params = {
@@ -130,10 +136,10 @@ def _reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
             "accept-language": "de"
         }
         headers = {
-            "User-Agent": "Schadenmanager/1.0 (Unfallaufnahme)"
+            "User-Agent": "Schadenmanager/1.0 (Unfallaufnahme; Contact: admin@schadenmanager.de)"
         }
 
-        response = requests.get(url, params=params, headers=headers, timeout=10)
+        response = session.get(url, params=params, headers=headers, timeout=15)
 
         if response.status_code == 200:
             data = response.json()
@@ -175,19 +181,46 @@ def _reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
         else:
             fehler_details.append(f"Nominatim HTTP {response.status_code}")
 
-    except requests.exceptions.ProxyError:
-        fehler_details.append("Proxy-Fehler: Kein Internetzugang")
+    except requests.exceptions.ProxyError as e:
+        fehler_details.append(f"Proxy-Fehler: {str(e)[:50]}")
+    except requests.exceptions.SSLError as e:
+        fehler_details.append(f"SSL-Fehler: {str(e)[:50]}")
     except requests.exceptions.Timeout:
-        fehler_details.append("Timeout: Server antwortet nicht")
-    except requests.exceptions.ConnectionError:
-        fehler_details.append("Verbindungsfehler: Kein Netzwerk")
+        fehler_details.append("Timeout: OpenStreetMap antwortet nicht (15s)")
+    except requests.exceptions.ConnectionError as e:
+        fehler_details.append(f"Verbindungsfehler: {str(e)[:50]}")
     except Exception as e:
         fehler_details.append(f"Fehler: {str(e)[:50]}")
+
+    # Versuch 2: Alternative API (Photon by Komoot) - falls Nominatim fehlschlägt
+    if fehler_details:
+        try:
+            # Photon ist eine schnelle Alternative zu Nominatim
+            url = f"https://photon.komoot.io/reverse?lat={lat}&lon={lng}&lang=de"
+            headers = {"User-Agent": "Schadenmanager/1.0"}
+
+            response = session.get(url, headers=headers, timeout=10)
+
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("features"):
+                    props = data["features"][0].get("properties", {})
+
+                    return {
+                        "strasse": props.get("street", ""),
+                        "hausnummer": props.get("housenumber", ""),
+                        "plz": props.get("postcode", ""),
+                        "ort": props.get("city") or props.get("town") or props.get("village", ""),
+                        "display_name": props.get("name", "") or f"{props.get('street', '')}, {props.get('city', '')}",
+                        "raw": props
+                    }
+        except Exception:
+            pass  # Fallback fehlgeschlagen, weiter zur Fehlermeldung
 
     # Wenn alle Versuche fehlgeschlagen
     if fehler_details:
         st.error(f"❌ Adressermittlung fehlgeschlagen: {', '.join(fehler_details)}")
-        st.info("💡 Bitte geben Sie die Adresse manuell ein.")
+        st.info("💡 Der Server hat keinen Zugang zu externen Diensten. Bitte geben Sie die Adresse manuell ein.")
 
     return None
 
