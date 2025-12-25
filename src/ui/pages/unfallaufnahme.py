@@ -384,6 +384,31 @@ def _render_schritt_wann_wo():
             help="Format: Breitengrad, Längengrad (z.B. 52.520008, 13.404954)",
             key="gps_input"
         )
+
+        # Automatische Adressauflösung wenn Koordinaten vorhanden
+        if gps_koordinaten and gps_koordinaten != st.session_state.unfallaufnahme.get('gps_koordinaten', ''):
+            st.session_state.unfallaufnahme['gps_koordinaten'] = gps_koordinaten
+            # Automatisch Adresse ermitteln
+            try:
+                parts = gps_koordinaten.replace(" ", "").split(",")
+                if len(parts) == 2:
+                    lat = float(parts[0])
+                    lng = float(parts[1])
+                    with st.spinner("Ermittle Adresse automatisch..."):
+                        adresse = _reverse_geocode(lat, lng)
+                    if adresse:
+                        st.session_state.unfallaufnahme['ort_details'] = {
+                            'strasse': adresse.get('strasse', ''),
+                            'hausnummer': adresse.get('hausnummer', ''),
+                            'plz': adresse.get('plz', ''),
+                            'ort': adresse.get('ort', ''),
+                            'land': 'Deutschland'
+                        }
+                        st.session_state.unfallaufnahme['adresse_ermittelt'] = True
+                        st.rerun()
+            except (ValueError, IndexError):
+                pass
+
         st.session_state.unfallaufnahme['gps_koordinaten'] = gps_koordinaten
 
         if gps_koordinaten:
@@ -392,40 +417,33 @@ def _render_schritt_wann_wo():
             coords_clean = gps_koordinaten.replace(" ", "")
             st.markdown(f"[📍 In Google Maps anzeigen](https://www.google.com/maps?q={coords_clean})")
 
-            # Button zum Ermitteln der Adresse aus Koordinaten
-            if st.button("🏠 Adresse aus Koordinaten ermitteln", key="reverse_geocode_btn"):
-                try:
-                    # Koordinaten parsen
-                    parts = gps_koordinaten.replace(" ", "").split(",")
-                    if len(parts) == 2:
-                        lat = float(parts[0])
-                        lng = float(parts[1])
-
-                        with st.spinner("Ermittle Adresse..."):
-                            adresse = _reverse_geocode(lat, lng)
-
-                        if adresse:
-                            # Adressfelder im Session State aktualisieren
-                            st.session_state.unfallaufnahme['ort_details'] = {
-                                'strasse': adresse.get('strasse', ''),
-                                'hausnummer': adresse.get('hausnummer', ''),
-                                'plz': adresse.get('plz', ''),
-                                'ort': adresse.get('ort', ''),
-                                'ortsteil': adresse.get('ortsteil', '')
-                            }
-                            st.session_state.unfallaufnahme['adresse_ermittelt'] = True
-                            st.success(f"✓ Adresse ermittelt: {adresse.get('display_name', '')}")
-                            st.rerun()
-                        else:
-                            st.warning("Adresse konnte nicht ermittelt werden. Bitte manuell eingeben.")
-                    else:
-                        st.error("Ungültiges Koordinatenformat. Erwartet: Breitengrad, Längengrad")
-                except ValueError:
-                    st.error("Ungültiges Koordinatenformat. Bitte im Format '52.520008, 13.404954' eingeben.")
-
             # Info-Box wenn Adresse ermittelt wurde
             if st.session_state.unfallaufnahme.get('adresse_ermittelt'):
-                st.info("✓ Die Adressfelder unten wurden automatisch ausgefüllt. Bitte prüfen und ggf. korrigieren.")
+                st.info("✓ Die Adressfelder unten wurden automatisch aus den GPS-Koordinaten ermittelt. Bitte prüfen und ggf. korrigieren.")
+            else:
+                # Manueller Button falls automatische Erkennung nicht funktioniert hat
+                if st.button("🏠 Adresse erneut ermitteln", key="reverse_geocode_btn"):
+                    try:
+                        parts = gps_koordinaten.replace(" ", "").split(",")
+                        if len(parts) == 2:
+                            lat = float(parts[0])
+                            lng = float(parts[1])
+                            with st.spinner("Ermittle Adresse..."):
+                                adresse = _reverse_geocode(lat, lng)
+                            if adresse:
+                                st.session_state.unfallaufnahme['ort_details'] = {
+                                    'strasse': adresse.get('strasse', ''),
+                                    'hausnummer': adresse.get('hausnummer', ''),
+                                    'plz': adresse.get('plz', ''),
+                                    'ort': adresse.get('ort', ''),
+                                    'land': 'Deutschland'
+                                }
+                                st.session_state.unfallaufnahme['adresse_ermittelt'] = True
+                                st.rerun()
+                            else:
+                                st.warning("Adresse konnte nicht ermittelt werden. Bitte manuell eingeben.")
+                    except ValueError:
+                        st.error("Ungültiges Koordinatenformat.")
 
     # Manuelle Adresseingabe (immer anzeigen)
     st.markdown("#### Adresse")
@@ -444,7 +462,7 @@ def _render_schritt_wann_wo():
             placeholder="z.B. 123"
         )
 
-    col_plz, col_ort = st.columns([1, 3])
+    col_plz, col_ort, col_land = st.columns([1, 2, 1])
     with col_plz:
         plz = st.text_input(
             "PLZ",
@@ -458,15 +476,22 @@ def _render_schritt_wann_wo():
             value=st.session_state.unfallaufnahme.get('ort_details', {}).get('ort', ''),
             placeholder="z.B. Berlin"
         )
+    with col_land:
+        land = st.text_input(
+            "Land",
+            value=st.session_state.unfallaufnahme.get('ort_details', {}).get('land', 'Deutschland'),
+            placeholder="Deutschland"
+        )
 
     # Speichern
     st.session_state.unfallaufnahme['ort_details'] = {
         'strasse': strasse,
         'hausnummer': hausnummer,
         'plz': plz,
-        'ort': ort
+        'ort': ort,
+        'land': land
     }
-    st.session_state.unfallaufnahme['ort'] = f"{strasse} {hausnummer}, {plz} {ort}".strip(", ")
+    st.session_state.unfallaufnahme['ort'] = f"{strasse} {hausnummer}, {plz} {ort}, {land}".strip(", ")
 
     besondere_lage = st.text_input(
         "Besondere Lage (optional)",
@@ -594,12 +619,12 @@ def _render_schritt_fotos():
                     help=pos['beispiel']
                 )
             else:
-                # Datei-Upload
+                # Datei-Upload mit Foto-Hinweis
                 foto = st.file_uploader(
                     f"📁 {pos['titel']} hochladen",
                     type=['jpg', 'jpeg', 'png', 'heic'],
                     key=f"foto_{pos['key']}",
-                    help=pos['beispiel']
+                    help=f"{pos['beispiel']} - Tipp: Auf Mobilgeräten können Sie über 'Durchsuchen' direkt ein Foto aufnehmen!"
                 )
 
             if foto:
@@ -612,11 +637,13 @@ def _render_schritt_fotos():
     st.markdown("---")
     st.markdown("#### Weitere Fotos (optional)")
     st.caption("z.B. Nahaufnahmen von Schäden, Bremsspuren, Verkehrsschilder")
+    st.info("💡 **Tipp:** Auf Mobilgeräten können Sie über 'Durchsuchen' direkt ein Foto aufnehmen!")
 
     zusatz_fotos = st.file_uploader(
-        "Zusätzliche Fotos",
+        "📷 Zusätzliche Fotos hochladen",
         type=['jpg', 'jpeg', 'png', 'heic'],
         accept_multiple_files=True,
+        help="Auf Mobilgeräten: Tippen Sie auf 'Durchsuchen' und wählen Sie 'Kamera'",
         key="zusatz_fotos"
     )
 
@@ -660,136 +687,242 @@ def _render_schritt_beteiligte():
     # Beteiligte aus Session State
     if 'beteiligte' not in st.session_state.unfallaufnahme:
         st.session_state.unfallaufnahme['beteiligte'] = []
+    if 'geplante_beteiligte' not in st.session_state.unfallaufnahme:
+        st.session_state.unfallaufnahme['geplante_beteiligte'] = []
 
     beteiligte = st.session_state.unfallaufnahme['beteiligte']
+    geplante = st.session_state.unfallaufnahme['geplante_beteiligte']
 
-    # Bestehende Beteiligte anzeigen
-    if beteiligte:
-        st.markdown("#### Bereits erfasste Beteiligte")
-        for i, bet in enumerate(beteiligte):
-            with st.expander(f"👤 {bet.get('name', 'Unbekannt')} - {bet.get('rolle', 'Beteiligter')}"):
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.write(f"**Name:** {bet.get('vorname', '')} {bet.get('name', '')}")
-                    st.write(f"**Adresse:** {bet.get('adresse', '-')}")
-                    st.write(f"**Versicherung:** {bet.get('versicherung', '-')}")
-                    st.write(f"**Kennzeichen:** {bet.get('kennzeichen', '-')}")
-                with col2:
-                    if st.button("🗑️ Löschen", key=f"del_bet_{i}"):
-                        beteiligte.pop(i)
-                        st.rerun()
+    # Schritt 1: Anzahl und Rollen der Beteiligten festlegen
+    if not geplante and not beteiligte:
+        st.markdown("#### Wie viele Personen waren am Unfall beteiligt?")
+        st.caption("Wählen Sie für jede beteiligte Person die entsprechende Rolle aus.")
 
-    st.markdown("---")
+        rollen_optionen = {
+            "Unfallgegner (Fahrer)": "🚗 Unfallgegner",
+            "Unfallgegner (Beifahrer)": "👤 Beifahrer Gegner",
+            "Zeuge": "👁️ Zeuge",
+            "Halter (falls nicht Fahrer)": "📋 Halter",
+            "Weitere Person": "👥 Weitere Person"
+        }
 
-    # Neuen Beteiligten erfassen
-    st.markdown("#### Neuen Beteiligten hinzufügen")
+        st.markdown("**Wählen Sie die Rollen der Beteiligten:**")
 
-    erfassung_methode = st.radio(
-        "Erfassungsmethode",
-        ["Foto von Ausweis/Führerschein", "Manuelle Eingabe"],
-        horizontal=True,
-        key="erfassung_methode"
-    )
+        col1, col2 = st.columns(2)
 
-    if erfassung_methode == "Foto von Ausweis/Führerschein":
-        st.markdown("""
-        <div class="photo-guide">
-            <span style="font-size: 30px;">📄</span><br>
-            <strong>Fotografieren Sie den Personalausweis oder Führerschein</strong><br>
-            <small>Die Daten werden automatisch erkannt (OCR)</small>
-        </div>
-        """, unsafe_allow_html=True)
+        with col1:
+            anzahl_gegner = st.number_input(
+                "🚗 Unfallgegner (Fahrer)",
+                min_value=0, max_value=5, value=1,
+                help="Anzahl der gegnerischen Fahrer"
+            )
+            anzahl_beifahrer = st.number_input(
+                "👤 Beifahrer (gegnerisches Fahrzeug)",
+                min_value=0, max_value=10, value=0,
+                help="Beifahrer im gegnerischen Fahrzeug"
+            )
 
-        ausweis_foto = st.file_uploader(
-            "Foto vom Ausweis",
-            type=['jpg', 'jpeg', 'png'],
-            key="ausweis_foto",
-            help="Achten Sie auf gute Beleuchtung und scharfe Aufnahme"
+        with col2:
+            anzahl_zeugen = st.number_input(
+                "👁️ Zeugen",
+                min_value=0, max_value=10, value=0,
+                help="Unbeteiligte Zeugen des Unfalls"
+            )
+            anzahl_halter = st.number_input(
+                "📋 Halter (falls nicht Fahrer)",
+                min_value=0, max_value=2, value=0,
+                help="Fahrzeughalter, falls nicht identisch mit Fahrer"
+            )
+
+        if st.button("✓ Beteiligte festlegen", type="primary", use_container_width=True):
+            geplante_liste = []
+            for i in range(anzahl_gegner):
+                geplante_liste.append({"rolle": "Unfallgegner", "nr": i + 1, "erfasst": False})
+            for i in range(anzahl_beifahrer):
+                geplante_liste.append({"rolle": "Beifahrer", "nr": i + 1, "erfasst": False})
+            for i in range(anzahl_zeugen):
+                geplante_liste.append({"rolle": "Zeuge", "nr": i + 1, "erfasst": False})
+            for i in range(anzahl_halter):
+                geplante_liste.append({"rolle": "Halter", "nr": i + 1, "erfasst": False})
+
+            if geplante_liste:
+                st.session_state.unfallaufnahme['geplante_beteiligte'] = geplante_liste
+                st.rerun()
+            else:
+                st.warning("Bitte geben Sie mindestens einen Beteiligten an.")
+
+    else:
+        # Übersicht der geplanten und erfassten Beteiligten
+        st.markdown("#### Übersicht der Beteiligten")
+
+        # Bereits erfasste anzeigen
+        if beteiligte:
+            st.markdown("**✅ Erfasst:**")
+            for i, bet in enumerate(beteiligte):
+                with st.expander(f"✓ {bet.get('vorname', '')} {bet.get('name', 'Unbekannt')} - {bet.get('rolle', 'Beteiligter')}", expanded=False):
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.write(f"**Name:** {bet.get('vorname', '')} {bet.get('name', '')}")
+                        st.write(f"**Adresse:** {bet.get('adresse', '-')}")
+                        st.write(f"**Versicherung:** {bet.get('versicherung', '-')}")
+                        st.write(f"**Kennzeichen:** {bet.get('kennzeichen', '-')}")
+                    with col2:
+                        if st.button("🗑️ Löschen", key=f"del_bet_{i}"):
+                            beteiligte.pop(i)
+                            st.rerun()
+
+        # Noch zu erfassende anzeigen
+        noch_offen = [g for g in geplante if not g.get('erfasst', False)]
+        if noch_offen:
+            st.markdown(f"**⏳ Noch zu erfassen: {len(noch_offen)}**")
+            for g in noch_offen:
+                st.caption(f"• {g['rolle']} {g['nr']}")
+
+        st.markdown("---")
+
+        # Neuen Beteiligten erfassen
+        st.markdown("#### Nächsten Beteiligten erfassen")
+
+        # Rolle aus geplanten vorschlagen
+        naechste_rolle = noch_offen[0]['rolle'] if noch_offen else "Unfallgegner"
+
+        erfassung_methode = st.radio(
+            "Erfassungsmethode",
+            ["📷 Foto von Ausweis/Führerschein", "✏️ Manuelle Eingabe"],
+            horizontal=True,
+            key="erfassung_methode"
         )
 
-        if ausweis_foto:
-            st.success("✓ Ausweis-Foto hochgeladen")
-            st.info("OCR-Erkennung wird nach dem Upload ausgeführt. Bitte prüfen und ergänzen Sie die erkannten Daten unten.")
+        if erfassung_methode == "📷 Foto von Ausweis/Führerschein":
+            st.markdown("""
+            <div class="photo-guide">
+                <span style="font-size: 30px;">📄</span><br>
+                <strong>Fotografieren Sie den Personalausweis oder Führerschein</strong><br>
+                <small>Vorder- UND Rückseite für vollständige Daten</small>
+            </div>
+            """, unsafe_allow_html=True)
 
-            # Hier würde normalerweise OCR stattfinden
-            # Für jetzt: Leere Felder anzeigen
-            st.warning("Die automatische Texterkennung ist noch in Entwicklung. Bitte geben Sie die Daten manuell ein.")
+            st.info("💡 **Tipp:** Auf Mobilgeräten können Sie über 'Durchsuchen' direkt ein Foto aufnehmen!")
 
-    # Manuelle Eingabe (immer anzeigen als Fallback oder Korrektur)
-    st.markdown("##### Personendaten")
+            col_front, col_back = st.columns(2)
 
-    col1, col2 = st.columns(2)
+            with col_front:
+                st.markdown("**Vorderseite:**")
+                ausweis_vorne = st.file_uploader(
+                    "📷 Vorderseite fotografieren/hochladen",
+                    type=['jpg', 'jpeg', 'png'],
+                    key="ausweis_vorne",
+                    help="Auf Mobilgeräten: Tippen Sie auf 'Durchsuchen' und wählen Sie 'Kamera'"
+                )
+                if ausweis_vorne:
+                    st.image(ausweis_vorne, width=150)
+                    st.success("✓ Vorderseite erfasst")
 
-    with col1:
-        rolle = st.selectbox(
-            "Rolle",
-            ["Unfallgegner", "Fahrer", "Beifahrer", "Zeuge", "Halter"],
-            key="neue_rolle"
+            with col_back:
+                st.markdown("**Rückseite:**")
+                ausweis_hinten = st.file_uploader(
+                    "📷 Rückseite fotografieren/hochladen",
+                    type=['jpg', 'jpeg', 'png'],
+                    key="ausweis_hinten",
+                    help="Auf Mobilgeräten: Tippen Sie auf 'Durchsuchen' und wählen Sie 'Kamera'"
+                )
+                if ausweis_hinten:
+                    st.image(ausweis_hinten, width=150)
+                    st.success("✓ Rückseite erfasst")
+
+            if ausweis_vorne or ausweis_hinten:
+                st.info("📝 OCR-Erkennung ist in Entwicklung. Bitte ergänzen Sie die Daten unten.")
+
+        # Manuelle Eingabe (immer anzeigen als Fallback oder Korrektur)
+        st.markdown("##### Personendaten")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            rolle = st.selectbox(
+                "Rolle",
+                ["Unfallgegner", "Beifahrer", "Zeuge", "Halter", "Sonstige"],
+                index=["Unfallgegner", "Beifahrer", "Zeuge", "Halter", "Sonstige"].index(naechste_rolle) if naechste_rolle in ["Unfallgegner", "Beifahrer", "Zeuge", "Halter", "Sonstige"] else 0,
+                key="neue_rolle"
+            )
+            vorname = st.text_input("Vorname", key="neuer_vorname", placeholder="Max")
+            geburtsdatum = st.date_input(
+                "Geburtsdatum",
+                value=None,
+                min_value=date(1920, 1, 1),
+                max_value=date.today(),
+                key="neues_geburtsdatum"
+            )
+
+        with col2:
+            name = st.text_input("Nachname", key="neuer_name", placeholder="Mustermann")
+            telefon = st.text_input("Telefon", key="neues_telefon", placeholder="0123 456789")
+            email = st.text_input("E-Mail", key="neue_email", placeholder="max@beispiel.de")
+
+        adresse = st.text_input(
+            "Adresse",
+            key="neue_adresse",
+            placeholder="Musterstraße 123, 12345 Musterstadt"
         )
-        vorname = st.text_input("Vorname", key="neuer_vorname", placeholder="Max")
-        geburtsdatum = st.date_input(
-            "Geburtsdatum",
-            value=None,
-            min_value=date(1920, 1, 1),
-            max_value=date.today(),
-            key="neues_geburtsdatum"
+
+        st.markdown("##### Versicherungsdaten")
+
+        col_v1, col_v2 = st.columns(2)
+
+        with col_v1:
+            versicherung = st.text_input(
+                "Versicherung",
+                key="neue_versicherung",
+                placeholder="z.B. Allianz, HUK, ADAC"
+            )
+
+        with col_v2:
+            versicherungsnr = st.text_input(
+                "Versicherungsnummer",
+                key="neue_versicherungsnr",
+                placeholder="Falls bekannt"
+            )
+
+        kennzeichen = st.text_input(
+            "Kennzeichen des Fahrzeugs",
+            key="neues_kennzeichen",
+            placeholder="z.B. B-AB 1234"
         )
 
-    with col2:
-        name = st.text_input("Nachname", key="neuer_name", placeholder="Mustermann")
-        telefon = st.text_input("Telefon", key="neues_telefon", placeholder="0123 456789")
-        email = st.text_input("E-Mail", key="neue_email", placeholder="max@beispiel.de")
+        # Beteiligten hinzufügen
+        if st.button("✓ Beteiligten hinzufügen", type="primary"):
+            if name:
+                neuer_beteiligter = {
+                    'rolle': rolle,
+                    'vorname': vorname,
+                    'name': name,
+                    'geburtsdatum': str(geburtsdatum) if geburtsdatum else None,
+                    'telefon': telefon,
+                    'email': email,
+                    'adresse': adresse,
+                    'versicherung': versicherung,
+                    'versicherungsnr': versicherungsnr,
+                    'kennzeichen': kennzeichen
+                }
+                st.session_state.unfallaufnahme['beteiligte'].append(neuer_beteiligter)
 
-    adresse = st.text_input(
-        "Adresse",
-        key="neue_adresse",
-        placeholder="Musterstraße 123, 12345 Musterstadt"
-    )
+                # Geplanten Beteiligten als erfasst markieren
+                for g in geplante:
+                    if g['rolle'] == rolle and not g.get('erfasst', False):
+                        g['erfasst'] = True
+                        break
 
-    st.markdown("##### Versicherungsdaten")
+                st.success(f"✓ {vorname} {name} wurde hinzugefügt")
+                st.rerun()
+            else:
+                st.error("Bitte geben Sie mindestens den Nachnamen ein")
 
-    col_v1, col_v2 = st.columns(2)
-
-    with col_v1:
-        versicherung = st.text_input(
-            "Versicherung",
-            key="neue_versicherung",
-            placeholder="z.B. Allianz, HUK, ADAC"
-        )
-
-    with col_v2:
-        versicherungsnr = st.text_input(
-            "Versicherungsnummer",
-            key="neue_versicherungsnr",
-            placeholder="Falls bekannt"
-        )
-
-    kennzeichen = st.text_input(
-        "Kennzeichen des Fahrzeugs",
-        key="neues_kennzeichen",
-        placeholder="z.B. B-AB 1234"
-    )
-
-    # Beteiligten hinzufügen
-    if st.button("✓ Beteiligten hinzufügen", type="primary"):
-        if name:
-            neuer_beteiligter = {
-                'rolle': rolle,
-                'vorname': vorname,
-                'name': name,
-                'geburtsdatum': str(geburtsdatum) if geburtsdatum else None,
-                'telefon': telefon,
-                'email': email,
-                'adresse': adresse,
-                'versicherung': versicherung,
-                'versicherungsnr': versicherungsnr,
-                'kennzeichen': kennzeichen
-            }
-            st.session_state.unfallaufnahme['beteiligte'].append(neuer_beteiligter)
-            st.success(f"✓ {vorname} {name} wurde hinzugefügt")
+        # Button zum Zurücksetzen der Planung
+        st.markdown("---")
+        if st.button("🔄 Beteiligte neu planen", key="reset_planung"):
+            st.session_state.unfallaufnahme['geplante_beteiligte'] = []
+            st.session_state.unfallaufnahme['beteiligte'] = []
             st.rerun()
-        else:
-            st.error("Bitte geben Sie mindestens den Nachnamen ein")
 
     # Navigation
     st.markdown("---")
@@ -835,11 +968,14 @@ def _render_schritt_kennzeichen():
     </div>
     """, unsafe_allow_html=True)
 
+    st.info("💡 **Tipp:** Auf Mobilgeräten können Sie über 'Durchsuchen' direkt ein Foto aufnehmen!")
+
     kennzeichen_fotos = st.file_uploader(
-        "Fotos der Kennzeichen",
+        "📷 Kennzeichen fotografieren/hochladen",
         type=['jpg', 'jpeg', 'png'],
         accept_multiple_files=True,
-        key="kennzeichen_fotos"
+        key="kennzeichen_fotos",
+        help="Auf Mobilgeräten: Tippen Sie auf 'Durchsuchen' und wählen Sie 'Kamera'"
     )
 
     if kennzeichen_fotos:
