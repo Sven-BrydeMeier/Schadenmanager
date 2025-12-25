@@ -1025,6 +1025,14 @@ def _render_schritt_beteiligte():
                             st.session_state.unfallaufnahme['ocr_ergebnis'] = ocr_ergebnis
 
                             if ocr_ergebnis.get('vorname') or ocr_ergebnis.get('nachname'):
+                                # Werte direkt in die Widget-Keys schreiben für automatisches Ausfüllen
+                                if ocr_ergebnis.get('vorname'):
+                                    st.session_state['neuer_vorname'] = ocr_ergebnis['vorname']
+                                if ocr_ergebnis.get('nachname'):
+                                    st.session_state['neuer_name'] = ocr_ergebnis['nachname']
+                                if ocr_ergebnis.get('adresse'):
+                                    st.session_state['neue_adresse'] = ocr_ergebnis['adresse']
+
                                 st.success("✅ Text erkannt! Die Felder wurden vorausgefüllt.")
                                 st.rerun()
                             else:
@@ -1045,11 +1053,13 @@ def _render_schritt_beteiligte():
         # Manuelle Eingabe (immer anzeigen als Fallback oder Korrektur)
         st.markdown("##### Personendaten")
 
-        # Werte aus OCR-Ergebnis als Standardwerte verwenden
-        ocr_vorname = ocr_ergebnis.get('vorname', '')
-        ocr_nachname = ocr_ergebnis.get('nachname', '')
-        ocr_adresse = ocr_ergebnis.get('adresse', '')
-        ocr_geburtsdatum = ocr_ergebnis.get('geburtsdatum', '')
+        # Initialisiere Formularfelder im Session State falls nicht vorhanden
+        if 'neuer_vorname' not in st.session_state:
+            st.session_state['neuer_vorname'] = ocr_ergebnis.get('vorname', '')
+        if 'neuer_name' not in st.session_state:
+            st.session_state['neuer_name'] = ocr_ergebnis.get('nachname', '')
+        if 'neue_adresse' not in st.session_state:
+            st.session_state['neue_adresse'] = ocr_ergebnis.get('adresse', '')
 
         col1, col2 = st.columns(2)
 
@@ -1062,12 +1072,12 @@ def _render_schritt_beteiligte():
             )
             vorname = st.text_input(
                 "Vorname",
-                value=ocr_vorname,
                 key="neuer_vorname",
                 placeholder="Max"
             )
 
             # Geburtsdatum aus OCR parsen
+            ocr_geburtsdatum = ocr_ergebnis.get('geburtsdatum', '')
             geb_default = None
             if ocr_geburtsdatum:
                 try:
@@ -1088,7 +1098,6 @@ def _render_schritt_beteiligte():
         with col2:
             name = st.text_input(
                 "Nachname",
-                value=ocr_nachname,
                 key="neuer_name",
                 placeholder="Mustermann"
             )
@@ -1097,7 +1106,6 @@ def _render_schritt_beteiligte():
 
         adresse = st.text_input(
             "Adresse",
-            value=ocr_adresse,
             key="neue_adresse",
             placeholder="Musterstraße 123, 12345 Musterstadt"
         )
