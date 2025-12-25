@@ -3,6 +3,7 @@ Unfallaufnahme vor Ort
 Mobile-freundliche Erfassung eines Unfalls durch das Unfallopfer
 """
 import streamlit as st
+import streamlit.components.v1 as components
 from datetime import datetime, date, time
 from typing import Optional, Dict, List
 import json
@@ -193,31 +194,98 @@ def _render_schritt_wann_wo():
         st.markdown("""
         <div class="info-box">
             <strong>📍 Standorterfassung</strong><br>
-            Klicken Sie auf den Button, um Ihren aktuellen Standort zu erfassen.
-            Sie können die Adresse danach noch korrigieren.
+            Klicken Sie auf den Button und erlauben Sie den Standortzugriff in Ihrem Browser.
         </div>
         """, unsafe_allow_html=True)
 
-        col_gps1, col_gps2 = st.columns([2, 1])
+        # JavaScript für GPS-Erfassung
+        gps_html = """
+        <div id="gps-container" style="margin: 10px 0;">
+            <button id="gps-btn" onclick="getLocation()" style="
+                background-color: #667eea;
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 16px;
+                width: 100%;
+            ">
+                📍 Meinen Standort erfassen
+            </button>
+            <div id="gps-result" style="margin-top: 10px; padding: 10px; background: #f0f9ff; border-radius: 8px; display: none;">
+                <strong>Erfasster Standort:</strong><br>
+                <span id="gps-coords"></span><br>
+                <a id="gps-maps-link" href="#" target="_blank" style="color: #667eea;">In Google Maps öffnen</a>
+            </div>
+            <div id="gps-error" style="margin-top: 10px; padding: 10px; background: #fef2f2; border-radius: 8px; color: #dc2626; display: none;"></div>
+        </div>
+        <script>
+        function getLocation() {
+            var btn = document.getElementById('gps-btn');
+            var result = document.getElementById('gps-result');
+            var error = document.getElementById('gps-error');
+            var coords = document.getElementById('gps-coords');
+            var mapsLink = document.getElementById('gps-maps-link');
 
-        with col_gps1:
-            # Manuelle Koordinaten-Eingabe als Fallback
-            st.text_input(
-                "GPS-Koordinaten (optional)",
-                placeholder="z.B. 52.520008, 13.404954",
-                help="Falls automatische Erfassung nicht funktioniert",
-                key="gps_coords"
-            )
+            btn.innerHTML = '⏳ Erfasse Standort...';
+            btn.disabled = true;
+            result.style.display = 'none';
+            error.style.display = 'none';
 
-        with col_gps2:
-            if st.button("📍 Standort erfassen", use_container_width=True):
-                st.info("Standorterfassung erfordert JavaScript. Bitte geben Sie die Adresse manuell ein oder nutzen Sie Google Maps.")
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        var lat = position.coords.latitude.toFixed(6);
+                        var lng = position.coords.longitude.toFixed(6);
+                        coords.innerHTML = lat + ', ' + lng;
+                        mapsLink.href = 'https://www.google.com/maps?q=' + lat + ',' + lng;
+                        result.style.display = 'block';
+                        btn.innerHTML = '✓ Standort erfasst';
+                        btn.style.backgroundColor = '#059669';
 
-        # Google Maps Link
-        st.markdown("""
-        **Tipp:** Öffnen Sie [Google Maps](https://maps.google.com) auf Ihrem Handy,
-        tippen Sie auf den blauen Punkt (Ihr Standort) und kopieren Sie die Koordinaten.
-        """)
+                        // Koordinaten in verstecktes Feld kopieren
+                        var coordInput = parent.document.querySelector('input[data-testid="stTextInput"][aria-label="GPS-Koordinaten"]');
+                        if (coordInput) {
+                            coordInput.value = lat + ', ' + lng;
+                            coordInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        }
+                    },
+                    function(err) {
+                        error.innerHTML = 'Fehler: ' + err.message + '<br>Bitte geben Sie die Adresse manuell ein.';
+                        error.style.display = 'block';
+                        btn.innerHTML = '📍 Erneut versuchen';
+                        btn.disabled = false;
+                        btn.style.backgroundColor = '#667eea';
+                    },
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                );
+            } else {
+                error.innerHTML = 'GPS wird von diesem Browser nicht unterstützt.<br>Bitte geben Sie die Adresse manuell ein.';
+                error.style.display = 'block';
+                btn.innerHTML = '📍 Nicht verfügbar';
+                btn.style.backgroundColor = '#9ca3af';
+            }
+        }
+        </script>
+        """
+        components.html(gps_html, height=180)
+
+        # Koordinaten-Eingabefeld (wird vom JavaScript befüllt)
+        gps_koordinaten = st.text_input(
+            "GPS-Koordinaten",
+            value=st.session_state.unfallaufnahme.get('gps_koordinaten', ''),
+            placeholder="Werden automatisch erfasst oder manuell eingeben",
+            help="Format: Breitengrad, Längengrad (z.B. 52.520008, 13.404954)",
+            key="gps_input"
+        )
+        st.session_state.unfallaufnahme['gps_koordinaten'] = gps_koordinaten
+
+        if gps_koordinaten:
+            st.success(f"✓ Koordinaten: {gps_koordinaten}")
+            # Google Maps Link
+            coords_clean = gps_koordinaten.replace(" ", "")
+            st.markdown(f"[📍 In Google Maps anzeigen](https://www.google.com/maps?q={coords_clean})")
 
     # Manuelle Adresseingabe (immer anzeigen)
     st.markdown("#### Adresse")
@@ -355,6 +423,16 @@ def _render_schritt_fotos():
         }
     ]
 
+    # Auswahl: Kamera oder Datei-Upload
+    foto_methode = st.radio(
+        "Wie möchten Sie die Fotos aufnehmen?",
+        ["📷 Kamera verwenden", "📁 Dateien hochladen"],
+        horizontal=True,
+        key="foto_methode"
+    )
+
+    use_camera = foto_methode == "📷 Kamera verwenden"
+
     # Zwei Spalten für die 4 Foto-Positionen
     col1, col2 = st.columns(2)
 
@@ -368,16 +446,27 @@ def _render_schritt_fotos():
             </div>
             """, unsafe_allow_html=True)
 
-            foto = st.file_uploader(
-                f"Foto {pos['titel']}",
-                type=['jpg', 'jpeg', 'png', 'heic'],
-                key=f"foto_{pos['key']}",
-                help=pos['beispiel']
-            )
+            if use_camera:
+                # Kamera-Aufnahme
+                foto = st.camera_input(
+                    f"📷 {pos['titel']} aufnehmen",
+                    key=f"cam_{pos['key']}",
+                    help=pos['beispiel']
+                )
+            else:
+                # Datei-Upload
+                foto = st.file_uploader(
+                    f"📁 {pos['titel']} hochladen",
+                    type=['jpg', 'jpeg', 'png', 'heic'],
+                    key=f"foto_{pos['key']}",
+                    help=pos['beispiel']
+                )
 
             if foto:
                 st.session_state.unfallaufnahme['fotos'][pos['key']] = foto
-                st.success(f"✓ {pos['titel']} hochgeladen")
+                st.success(f"✓ {pos['titel']} erfasst")
+                # Vorschau anzeigen
+                st.image(foto, width=150)
 
     # Zusätzliche Fotos
     st.markdown("---")
