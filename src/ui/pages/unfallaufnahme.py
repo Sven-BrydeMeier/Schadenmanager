@@ -8,8 +8,94 @@ from datetime import datetime, date, time
 from typing import Optional, Dict, List
 import json
 import requests
+import re
 
 from src.config.database import get_session
+
+# OCR-Imports (optional, falls verfügbar)
+try:
+    from PIL import Image
+    import pytesseract
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
+
+
+def _ocr_ausweis(image_file) -> Optional[Dict]:
+    """
+    Führt OCR auf einem Ausweis-Foto durch und extrahiert relevante Daten.
+
+    Args:
+        image_file: Hochgeladene Bilddatei (Streamlit UploadedFile)
+
+    Returns:
+        Dictionary mit erkannten Feldern oder None bei Fehler
+    """
+    if not OCR_AVAILABLE:
+        return None
+
+    try:
+        # Bild öffnen
+        image = Image.open(image_file)
+
+        # OCR durchführen (Deutsch)
+        text = pytesseract.image_to_string(image, lang='deu')
+
+        if not text.strip():
+            return None
+
+        # Erkannte Daten parsen
+        ergebnis = {
+            'raw_text': text,
+            'vorname': '',
+            'nachname': '',
+            'geburtsdatum': '',
+            'adresse': '',
+            'ausweisnummer': ''
+        }
+
+        lines = text.split('\n')
+        lines = [l.strip() for l in lines if l.strip()]
+
+        # Muster für deutsche Personalausweise
+        for i, line in enumerate(lines):
+            line_upper = line.upper()
+
+            # Nachname (oft nach "NACHNAME" oder "NAME")
+            if 'NACHNAME' in line_upper or (line_upper == 'NAME' and i + 1 < len(lines)):
+                if i + 1 < len(lines):
+                    ergebnis['nachname'] = lines[i + 1].title()
+
+            # Vorname
+            if 'VORNAME' in line_upper or 'VORNAMEN' in line_upper:
+                if i + 1 < len(lines):
+                    ergebnis['vorname'] = lines[i + 1].title()
+
+            # Geburtsdatum (Format: DD.MM.YYYY)
+            datum_match = re.search(r'(\d{2})[.\-/](\d{2})[.\-/](\d{4})', line)
+            if datum_match and not ergebnis['geburtsdatum']:
+                tag, monat, jahr = datum_match.groups()
+                if 1 <= int(tag) <= 31 and 1 <= int(monat) <= 12 and 1900 <= int(jahr) <= 2020:
+                    ergebnis['geburtsdatum'] = f"{tag}.{monat}.{jahr}"
+
+            # Ausweisnummer (typisches Format für deutschen Personalausweis)
+            ausweis_match = re.search(r'([A-Z0-9]{9,10})', line)
+            if ausweis_match and not ergebnis['ausweisnummer']:
+                potential_nr = ausweis_match.group(1)
+                # Prüfen ob es wie eine Ausweisnummer aussieht (mix aus Buchstaben und Zahlen)
+                if any(c.isalpha() for c in potential_nr) and any(c.isdigit() for c in potential_nr):
+                    ergebnis['ausweisnummer'] = potential_nr
+
+            # Adresse (PLZ + Ort)
+            plz_match = re.search(r'(\d{5})\s+([A-Za-zäöüÄÖÜß\s]+)', line)
+            if plz_match and not ergebnis['adresse']:
+                ergebnis['adresse'] = f"{plz_match.group(1)} {plz_match.group(2).strip()}"
+
+        return ergebnis
+
+    except Exception as e:
+        st.warning(f"OCR-Fehler: {e}")
+        return None
 
 
 def _reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
@@ -385,30 +471,7 @@ def _render_schritt_wann_wo():
             key="gps_input"
         )
 
-        # Automatische Adressauflösung wenn Koordinaten vorhanden
-        if gps_koordinaten and gps_koordinaten != st.session_state.unfallaufnahme.get('gps_koordinaten', ''):
-            st.session_state.unfallaufnahme['gps_koordinaten'] = gps_koordinaten
-            # Automatisch Adresse ermitteln
-            try:
-                parts = gps_koordinaten.replace(" ", "").split(",")
-                if len(parts) == 2:
-                    lat = float(parts[0])
-                    lng = float(parts[1])
-                    with st.spinner("Ermittle Adresse automatisch..."):
-                        adresse = _reverse_geocode(lat, lng)
-                    if adresse:
-                        st.session_state.unfallaufnahme['ort_details'] = {
-                            'strasse': adresse.get('strasse', ''),
-                            'hausnummer': adresse.get('hausnummer', ''),
-                            'plz': adresse.get('plz', ''),
-                            'ort': adresse.get('ort', ''),
-                            'land': 'Deutschland'
-                        }
-                        st.session_state.unfallaufnahme['adresse_ermittelt'] = True
-                        st.rerun()
-            except (ValueError, IndexError):
-                pass
-
+        # Speichere aktuelle Koordinaten
         st.session_state.unfallaufnahme['gps_koordinaten'] = gps_koordinaten
 
         if gps_koordinaten:
@@ -417,20 +480,28 @@ def _render_schritt_wann_wo():
             coords_clean = gps_koordinaten.replace(" ", "")
             st.markdown(f"[📍 In Google Maps anzeigen](https://www.google.com/maps?q={coords_clean})")
 
-            # Info-Box wenn Adresse ermittelt wurde
-            if st.session_state.unfallaufnahme.get('adresse_ermittelt'):
-                st.info("✓ Die Adressfelder unten wurden automatisch aus den GPS-Koordinaten ermittelt. Bitte prüfen und ggf. korrigieren.")
+            # Prüfe ob neue Koordinaten (noch nicht aufgelöst)
+            letzte_aufgeloeste_coords = st.session_state.unfallaufnahme.get('letzte_aufgeloeste_coords', '')
+            adresse_bereits_ermittelt = (gps_koordinaten.replace(" ", "") == letzte_aufgeloeste_coords.replace(" ", ""))
+
+            if adresse_bereits_ermittelt:
+                st.info("✓ Adresse wurde aus GPS-Koordinaten ermittelt. Bitte prüfen und ggf. korrigieren.")
             else:
-                # Manueller Button falls automatische Erkennung nicht funktioniert hat
-                if st.button("🏠 Adresse erneut ermitteln", key="reverse_geocode_btn"):
+                # Button zum Auflösen der Adresse - immer anzeigen wenn nicht aufgelöst
+                st.warning("⚠️ Bitte klicken Sie auf den Button um die Adresse zu ermitteln:")
+
+                if st.button("🏠 Adresse aus GPS-Koordinaten ermitteln", type="primary", key="reverse_geocode_btn"):
                     try:
                         parts = gps_koordinaten.replace(" ", "").split(",")
                         if len(parts) == 2:
                             lat = float(parts[0])
                             lng = float(parts[1])
-                            with st.spinner("Ermittle Adresse..."):
+
+                            with st.spinner("Ermittle Adresse über OpenStreetMap..."):
                                 adresse = _reverse_geocode(lat, lng)
+
                             if adresse:
+                                # Adressfelder aktualisieren
                                 st.session_state.unfallaufnahme['ort_details'] = {
                                     'strasse': adresse.get('strasse', ''),
                                     'hausnummer': adresse.get('hausnummer', ''),
@@ -438,12 +509,17 @@ def _render_schritt_wann_wo():
                                     'ort': adresse.get('ort', ''),
                                     'land': 'Deutschland'
                                 }
+                                # Merken welche Koordinaten aufgelöst wurden
+                                st.session_state.unfallaufnahme['letzte_aufgeloeste_coords'] = gps_koordinaten
                                 st.session_state.unfallaufnahme['adresse_ermittelt'] = True
+                                st.success(f"✓ Adresse gefunden: {adresse.get('display_name', '')}")
                                 st.rerun()
                             else:
-                                st.warning("Adresse konnte nicht ermittelt werden. Bitte manuell eingeben.")
-                    except ValueError:
-                        st.error("Ungültiges Koordinatenformat.")
+                                st.error("Adresse konnte nicht ermittelt werden. Bitte manuell eingeben.")
+                        else:
+                            st.error("Ungültiges Koordinatenformat. Erwartet: Breitengrad, Längengrad")
+                    except ValueError as e:
+                        st.error(f"Fehler bei der Adressermittlung: {e}")
 
     # Manuelle Adresseingabe (immer anzeigen)
     st.markdown("#### Adresse")
@@ -793,6 +869,12 @@ def _render_schritt_beteiligte():
             key="erfassung_methode"
         )
 
+        # OCR-Ergebnisse im Session State speichern
+        if 'ocr_ergebnis' not in st.session_state.unfallaufnahme:
+            st.session_state.unfallaufnahme['ocr_ergebnis'] = {}
+
+        ocr_ergebnis = st.session_state.unfallaufnahme['ocr_ergebnis']
+
         if erfassung_methode == "📷 Foto von Ausweis/Führerschein":
             st.markdown("""
             <div class="photo-guide">
@@ -830,11 +912,57 @@ def _render_schritt_beteiligte():
                     st.image(ausweis_hinten, width=150)
                     st.success("✓ Rückseite erfasst")
 
+            # OCR-Verarbeitung
             if ausweis_vorne or ausweis_hinten:
-                st.info("📝 OCR-Erkennung ist in Entwicklung. Bitte ergänzen Sie die Daten unten.")
+                if OCR_AVAILABLE:
+                    if st.button("🔍 Text automatisch erkennen (OCR)", type="primary", key="ocr_btn"):
+                        with st.spinner("Analysiere Ausweisfotos..."):
+                            ocr_texte = []
+
+                            # Vorderseite analysieren
+                            if ausweis_vorne:
+                                result_vorne = _ocr_ausweis(ausweis_vorne)
+                                if result_vorne:
+                                    ocr_ergebnis.update(result_vorne)
+                                    ocr_texte.append(f"Vorderseite: {result_vorne.get('raw_text', '')[:200]}")
+
+                            # Rückseite analysieren
+                            if ausweis_hinten:
+                                result_hinten = _ocr_ausweis(ausweis_hinten)
+                                if result_hinten:
+                                    # Nur leere Felder überschreiben
+                                    for key, value in result_hinten.items():
+                                        if value and not ocr_ergebnis.get(key):
+                                            ocr_ergebnis[key] = value
+                                    ocr_texte.append(f"Rückseite: {result_hinten.get('raw_text', '')[:200]}")
+
+                            st.session_state.unfallaufnahme['ocr_ergebnis'] = ocr_ergebnis
+
+                            if ocr_ergebnis.get('vorname') or ocr_ergebnis.get('nachname'):
+                                st.success("✅ Text erkannt! Die Felder wurden vorausgefüllt.")
+                                st.rerun()
+                            else:
+                                st.warning("⚠️ Konnte keinen Text erkennen. Bitte Daten manuell eingeben.")
+
+                            # Debug: Zeige erkannten Text
+                            with st.expander("🔍 Erkannter Text (Debug)"):
+                                for text in ocr_texte:
+                                    st.text(text)
+                else:
+                    st.warning("⚠️ OCR-Bibliothek nicht verfügbar. Bitte Daten manuell eingeben.")
+
+                # Zeige OCR-Ergebnisse wenn vorhanden
+                if ocr_ergebnis.get('vorname') or ocr_ergebnis.get('nachname'):
+                    st.info(f"✅ Erkannt: {ocr_ergebnis.get('vorname', '')} {ocr_ergebnis.get('nachname', '')}")
 
         # Manuelle Eingabe (immer anzeigen als Fallback oder Korrektur)
         st.markdown("##### Personendaten")
+
+        # Werte aus OCR-Ergebnis als Standardwerte verwenden
+        ocr_vorname = ocr_ergebnis.get('vorname', '')
+        ocr_nachname = ocr_ergebnis.get('nachname', '')
+        ocr_adresse = ocr_ergebnis.get('adresse', '')
+        ocr_geburtsdatum = ocr_ergebnis.get('geburtsdatum', '')
 
         col1, col2 = st.columns(2)
 
@@ -845,22 +973,44 @@ def _render_schritt_beteiligte():
                 index=["Unfallgegner", "Beifahrer", "Zeuge", "Halter", "Sonstige"].index(naechste_rolle) if naechste_rolle in ["Unfallgegner", "Beifahrer", "Zeuge", "Halter", "Sonstige"] else 0,
                 key="neue_rolle"
             )
-            vorname = st.text_input("Vorname", key="neuer_vorname", placeholder="Max")
+            vorname = st.text_input(
+                "Vorname",
+                value=ocr_vorname,
+                key="neuer_vorname",
+                placeholder="Max"
+            )
+
+            # Geburtsdatum aus OCR parsen
+            geb_default = None
+            if ocr_geburtsdatum:
+                try:
+                    parts = ocr_geburtsdatum.split('.')
+                    if len(parts) == 3:
+                        geb_default = date(int(parts[2]), int(parts[1]), int(parts[0]))
+                except (ValueError, IndexError):
+                    pass
+
             geburtsdatum = st.date_input(
                 "Geburtsdatum",
-                value=None,
+                value=geb_default,
                 min_value=date(1920, 1, 1),
                 max_value=date.today(),
                 key="neues_geburtsdatum"
             )
 
         with col2:
-            name = st.text_input("Nachname", key="neuer_name", placeholder="Mustermann")
+            name = st.text_input(
+                "Nachname",
+                value=ocr_nachname,
+                key="neuer_name",
+                placeholder="Mustermann"
+            )
             telefon = st.text_input("Telefon", key="neues_telefon", placeholder="0123 456789")
             email = st.text_input("E-Mail", key="neue_email", placeholder="max@beispiel.de")
 
         adresse = st.text_input(
             "Adresse",
+            value=ocr_adresse,
             key="neue_adresse",
             placeholder="Musterstraße 123, 12345 Musterstadt"
         )
