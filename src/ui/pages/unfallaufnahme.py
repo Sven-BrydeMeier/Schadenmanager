@@ -461,7 +461,7 @@ def render_unfallaufnahme():
     st.progress(fortschritt / 5, text=f"Schritt {fortschritt} von 5")
 
     # Schritt-Anzeige als klickbare Buttons
-    schritt_namen = ["Wann & Wo", "Fotos", "Beteiligte", "Kennzeichen", "Abschluss"]
+    schritt_namen = ["Wann & Wo", "Bilder vom Unfall", "Beteiligte", "Kennzeichen", "Abschluss"]
 
     cols = st.columns(5)
     for i, (col, name) in enumerate(zip(cols, schritt_namen), 1):
@@ -658,19 +658,18 @@ def _render_schritt_wann_wo():
             adresse_bereits_ermittelt = (gps_koordinaten.replace(" ", "") == letzte_aufgeloeste_coords.replace(" ", ""))
 
             if adresse_bereits_ermittelt:
-                st.info("✓ Adresse wurde aus GPS-Koordinaten ermittelt. Bitte prüfen und ggf. korrigieren.")
+                st.info("✓ Adresse wurde automatisch aus GPS-Koordinaten ermittelt.")
             else:
-                # Button zum Auflösen der Adresse - immer anzeigen wenn nicht aufgelöst
-                st.warning("⚠️ Bitte klicken Sie auf den Button um die Adresse zu ermitteln:")
+                # AUTOMATISCHE Adressermittlung bei neuen Koordinaten
+                try:
+                    parts = gps_koordinaten.replace(" ", "").split(",")
+                    if len(parts) == 2:
+                        lat = float(parts[0])
+                        lng = float(parts[1])
 
-                if st.button("🏠 Adresse aus GPS-Koordinaten ermitteln", type="primary", key="reverse_geocode_btn"):
-                    try:
-                        parts = gps_koordinaten.replace(" ", "").split(",")
-                        if len(parts) == 2:
-                            lat = float(parts[0])
-                            lng = float(parts[1])
-
-                            with st.spinner("Ermittle Adresse über OpenStreetMap..."):
+                        # Nur wenn gültige Koordinaten
+                        if -90 <= lat <= 90 and -180 <= lng <= 180:
+                            with st.spinner("🔄 Ermittle Adresse automatisch..."):
                                 adresse = _reverse_geocode(lat, lng)
 
                             if adresse:
@@ -688,11 +687,12 @@ def _render_schritt_wann_wo():
                                 st.success(f"✓ Adresse gefunden: {adresse.get('display_name', '')}")
                                 st.rerun()
                             else:
-                                st.error("Adresse konnte nicht ermittelt werden. Bitte manuell eingeben.")
-                        else:
-                            st.error("Ungültiges Koordinatenformat. Erwartet: Breitengrad, Längengrad")
-                    except ValueError as e:
-                        st.error(f"Fehler bei der Adressermittlung: {e}")
+                                # Fallback: Manueller Button wenn automatisch fehlschlägt
+                                st.warning("⚠️ Automatische Adressermittlung fehlgeschlagen. Bitte manuell eingeben oder erneut versuchen:")
+                                if st.button("🔄 Erneut versuchen", type="secondary", key="retry_geocode_btn"):
+                                    st.rerun()
+                except ValueError:
+                    st.warning("⚠️ Ungültiges Koordinatenformat. Bitte prüfen Sie die Eingabe.")
 
     # Manuelle Adresseingabe (immer anzeigen)
     st.markdown("#### Adresse")
@@ -781,7 +781,7 @@ def _render_schritt_wann_wo():
 
     # Weiter-Button
     st.markdown("---")
-    if st.button("Weiter zu Fotos →", type="primary", use_container_width=True):
+    if st.button("Weiter zu Bilder vom Unfall →", type="primary", use_container_width=True):
         st.session_state.unfallaufnahme['schritt'] = 2
         st.rerun()
 
