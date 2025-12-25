@@ -101,6 +101,7 @@ def _ocr_ausweis(image_file) -> Optional[Dict]:
 def _reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
     """
     Ermittelt die Adresse aus GPS-Koordinaten via OpenStreetMap Nominatim API.
+    Mit Fallback-Optionen und robuster Fehlerbehandlung.
 
     Args:
         lat: Breitengrad
@@ -109,8 +110,11 @@ def _reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
     Returns:
         Dictionary mit Adressdaten oder None bei Fehler
     """
+    fehler_details = []
+
+    # Versuch 1: OpenStreetMap Nominatim
     try:
-        url = f"https://nominatim.openstreetmap.org/reverse"
+        url = "https://nominatim.openstreetmap.org/reverse"
         params = {
             "lat": lat,
             "lon": lng,
@@ -122,7 +126,7 @@ def _reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
             "User-Agent": "Schadenmanager/1.0 (Unfallaufnahme)"
         }
 
-        response = requests.get(url, params=params, headers=headers, timeout=5)
+        response = requests.get(url, params=params, headers=headers, timeout=10)
 
         if response.status_code == 200:
             data = response.json()
@@ -153,27 +157,69 @@ def _reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
                 ""
             )
 
-            # Ortsteil/Stadtteil (optional)
-            ortsteil = (
-                address.get("suburb") or
-                address.get("neighbourhood") or
-                address.get("quarter") or
-                ""
-            )
-
             return {
                 "strasse": strasse,
                 "hausnummer": hausnummer,
                 "plz": plz,
                 "ort": ort,
-                "ortsteil": ortsteil,
                 "display_name": data.get("display_name", ""),
                 "raw": address
             }
+        else:
+            fehler_details.append(f"Nominatim HTTP {response.status_code}")
+
+    except requests.exceptions.ProxyError:
+        fehler_details.append("Proxy-Fehler: Kein Internetzugang")
+    except requests.exceptions.Timeout:
+        fehler_details.append("Timeout: Server antwortet nicht")
+    except requests.exceptions.ConnectionError:
+        fehler_details.append("Verbindungsfehler: Kein Netzwerk")
     except Exception as e:
-        st.warning(f"Adressermittlung fehlgeschlagen: {e}")
+        fehler_details.append(f"Fehler: {str(e)[:50]}")
+
+    # Wenn alle Versuche fehlgeschlagen
+    if fehler_details:
+        st.error(f"❌ Adressermittlung fehlgeschlagen: {', '.join(fehler_details)}")
+        st.info("💡 Bitte geben Sie die Adresse manuell ein.")
 
     return None
+
+
+def _ocr_kennzeichen(image_file) -> Optional[str]:
+    """
+    Versucht ein Kennzeichen aus einem Foto zu erkennen.
+    Verwendet einfache Bildverarbeitung und Musterabgleich.
+    """
+    if not OCR_AVAILABLE:
+        return None
+
+    try:
+        from PIL import Image, ImageEnhance, ImageFilter
+        import pytesseract
+
+        image = Image.open(image_file)
+
+        # Bild vorverarbeiten für bessere OCR
+        # In Graustufen umwandeln
+        image = image.convert('L')
+        # Kontrast erhöhen
+        enhancer = ImageEnhance.Contrast(image)
+        image = enhancer.enhance(2.0)
+
+        # OCR durchführen
+        text = pytesseract.image_to_string(image, config='--psm 7')  # Single line mode
+
+        # Deutsche Kennzeichen-Muster suchen (z.B. "B-AB 1234" oder "M AB 123")
+        import re
+        kennzeichen_pattern = r'[A-ZÄÖÜ]{1,3}[\s\-]?[A-Z]{1,2}[\s\-]?\d{1,4}[EH]?'
+        match = re.search(kennzeichen_pattern, text.upper())
+
+        if match:
+            return match.group(0).strip()
+
+        return None
+    except Exception:
+        return None
 
 
 def render_unfallaufnahme():
@@ -1102,55 +1148,123 @@ def _render_schritt_kennzeichen():
     st.markdown("""
     <div class="info-box">
         <strong>🚗 Kennzeichen dokumentieren</strong><br>
-        Fotografieren Sie die Kennzeichen aller am Unfall beteiligten Fahrzeuge.
-        So können die Fahrzeuge eindeutig identifiziert werden.
+        Erfassen Sie die Kennzeichen aller am Unfall beteiligten Fahrzeuge -
+        per Foto oder manueller Eingabe.
     </div>
     """, unsafe_allow_html=True)
 
-    # Kennzeichen-Fotos
-    st.markdown("#### Kennzeichen fotografieren")
+    # Initialisiere Kennzeichen-Liste im Session State
+    if 'erfasste_kennzeichen' not in st.session_state.unfallaufnahme:
+        st.session_state.unfallaufnahme['erfasste_kennzeichen'] = []
 
-    st.markdown("""
-    <div class="photo-guide">
-        <span style="font-size: 40px;">🔢</span><br>
-        <strong>Fotografieren Sie die Kennzeichen</strong><br>
-        <small>Achten Sie darauf, dass das Kennzeichen gut lesbar ist</small>
-    </div>
-    """, unsafe_allow_html=True)
+    erfasste_kz = st.session_state.unfallaufnahme['erfasste_kennzeichen']
 
-    st.info("💡 **Tipp:** Auf Mobilgeräten können Sie über 'Durchsuchen' direkt ein Foto aufnehmen!")
+    # Bereits erfasste Kennzeichen anzeigen
+    if erfasste_kz:
+        st.markdown("#### ✅ Bereits erfasste Kennzeichen")
+        for i, kz in enumerate(erfasste_kz):
+            col1, col2, col3 = st.columns([2, 2, 1])
+            with col1:
+                st.write(f"**{kz['kennzeichen']}**")
+            with col2:
+                st.caption(kz.get('zuordnung', 'Nicht zugeordnet'))
+            with col3:
+                if st.button("🗑️", key=f"del_kz_{i}", help="Löschen"):
+                    erfasste_kz.pop(i)
+                    st.rerun()
+        st.markdown("---")
 
-    kennzeichen_fotos = st.file_uploader(
-        "📷 Kennzeichen fotografieren/hochladen",
-        type=['jpg', 'jpeg', 'png'],
-        accept_multiple_files=True,
-        key="kennzeichen_fotos",
-        help="Auf Mobilgeräten: Tippen Sie auf 'Durchsuchen' und wählen Sie 'Kamera'"
+    # Neues Kennzeichen erfassen
+    st.markdown("#### Kennzeichen erfassen")
+
+    erfassung_art = st.radio(
+        "Wie möchten Sie das Kennzeichen erfassen?",
+        ["📷 Per Foto", "✏️ Manuelle Eingabe"],
+        horizontal=True,
+        key="kz_erfassung_art"
     )
 
-    if kennzeichen_fotos:
-        st.session_state.unfallaufnahme['kennzeichen_fotos'] = kennzeichen_fotos
-        st.success(f"✓ {len(kennzeichen_fotos)} Kennzeichen-Fotos hochgeladen")
+    if erfassung_art == "📷 Per Foto":
+        st.markdown("""
+        <div class="photo-guide">
+            <span style="font-size: 40px;">🔢</span><br>
+            <strong>Fotografieren Sie das Kennzeichen</strong><br>
+            <small>Achten Sie auf gute Beleuchtung und scharfes Bild</small>
+        </div>
+        """, unsafe_allow_html=True)
 
-        # Zuordnung zu Beteiligten
-        if st.session_state.unfallaufnahme.get('beteiligte'):
-            st.markdown("#### Zuordnung zu Beteiligten")
-            st.caption("Ordnen Sie die Kennzeichen den erfassten Beteiligten zu")
+        st.info("💡 **Tipp:** Auf Mobilgeräten können Sie über 'Durchsuchen' direkt ein Foto aufnehmen!")
 
-            for i, foto in enumerate(kennzeichen_fotos):
-                col1, col2 = st.columns([1, 2])
-                with col1:
-                    st.write(f"**Foto {i+1}:** {foto.name}")
-                with col2:
-                    beteiligte_namen = [
-                        f"{b.get('vorname', '')} {b.get('name', '')}"
-                        for b in st.session_state.unfallaufnahme['beteiligte']
-                    ]
-                    st.selectbox(
-                        "Zuordnung",
-                        ["Nicht zugeordnet"] + beteiligte_namen,
-                        key=f"kennzeichen_zuordnung_{i}"
-                    )
+        kz_foto = st.file_uploader(
+            "📷 Kennzeichen fotografieren/hochladen",
+            type=['jpg', 'jpeg', 'png'],
+            key="einzelnes_kz_foto",
+            help="Auf Mobilgeräten: Tippen Sie auf 'Durchsuchen' und wählen Sie 'Kamera'"
+        )
+
+        if kz_foto:
+            st.image(kz_foto, width=300)
+            st.success("✓ Foto hochgeladen")
+
+            # OCR versuchen
+            erkanntes_kz = ""
+            if OCR_AVAILABLE:
+                if st.button("🔍 Kennzeichen automatisch erkennen", key="kz_ocr_btn"):
+                    with st.spinner("Analysiere Kennzeichen..."):
+                        erkanntes_kz = _ocr_kennzeichen(kz_foto)
+                        if erkanntes_kz:
+                            st.success(f"✅ Erkannt: **{erkanntes_kz}**")
+                            st.session_state.unfallaufnahme['erkanntes_kz'] = erkanntes_kz
+                        else:
+                            st.warning("⚠️ Kennzeichen konnte nicht automatisch erkannt werden. Bitte manuell eingeben.")
+
+            # Feld für manuelle Eingabe/Korrektur
+            erkanntes_kz = st.session_state.unfallaufnahme.get('erkanntes_kz', '')
+            kennzeichen_eingabe = st.text_input(
+                "Kennzeichen",
+                value=erkanntes_kz,
+                placeholder="z.B. B-AB 1234",
+                key="kz_aus_foto"
+            )
+        else:
+            kennzeichen_eingabe = ""
+
+    else:  # Manuelle Eingabe
+        kennzeichen_eingabe = st.text_input(
+            "Kennzeichen eingeben",
+            placeholder="z.B. B-AB 1234 oder M XY 999",
+            key="kz_manuell",
+            help="Format: Ortskürzel - Buchstaben - Zahlen (z.B. B-AB 1234)"
+        )
+
+    # Zuordnung zu Beteiligtem
+    beteiligte = st.session_state.unfallaufnahme.get('beteiligte', [])
+    zuordnung_optionen = ["Gegnerisches Fahrzeug"] + [
+        f"{b.get('vorname', '')} {b.get('name', '')} ({b.get('rolle', '')})"
+        for b in beteiligte
+    ]
+
+    zuordnung = st.selectbox(
+        "Zuordnung",
+        zuordnung_optionen,
+        key="kz_zuordnung",
+        help="Zu welcher Person/welchem Fahrzeug gehört dieses Kennzeichen?"
+    )
+
+    # Kennzeichen hinzufügen
+    if st.button("✓ Kennzeichen speichern", type="primary", key="kz_speichern"):
+        if kennzeichen_eingabe:
+            neues_kz = {
+                'kennzeichen': kennzeichen_eingabe.upper(),
+                'zuordnung': zuordnung,
+                'foto': True if erfassung_art == "📷 Per Foto" else False
+            }
+            erfasste_kz.append(neues_kz)
+            st.session_state.unfallaufnahme['erkanntes_kz'] = ''  # Reset
+            st.success(f"✓ Kennzeichen {kennzeichen_eingabe.upper()} gespeichert!")
+            st.rerun()
+        else:
+            st.error("Bitte geben Sie ein Kennzeichen ein.")
 
     # Zusätzliche Notizen
     st.markdown("---")
