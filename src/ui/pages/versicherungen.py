@@ -6,25 +6,232 @@ import streamlit as st
 
 from src.config.database import get_session
 from src.services.versicherungen import VersicherungService, Versicherung
+from src.ui.pages.login import get_current_user_role
 
 
 def render_versicherungen():
     """Rendert die Versicherungsdatenbank-Seite"""
     st.title("🏢 Versicherungsdatenbank")
 
-    # Tabs
-    tab1, tab2, tab3 = st.tabs([
-        "Suche", "Alle Versicherungen", "Neue Versicherung"
-    ])
+    # Rolle prüfen für Zentralruf-Tab
+    rolle = get_current_user_role()
 
-    with tab1:
-        _render_suche()
+    # Tabs - Zentralruf nur für Anwalt/Admin
+    if rolle in ["ANWALT", "ADMIN"]:
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "🔍 Zentralruf", "Suche", "Alle Versicherungen", "Neue Versicherung"
+        ])
 
-    with tab2:
-        _render_alle_versicherungen()
+        with tab1:
+            _render_zentralruf()
 
-    with tab3:
-        _render_neue_versicherung()
+        with tab2:
+            _render_suche()
+
+        with tab3:
+            _render_alle_versicherungen()
+
+        with tab4:
+            _render_neue_versicherung()
+    else:
+        tab1, tab2, tab3 = st.tabs([
+            "Suche", "Alle Versicherungen", "Neue Versicherung"
+        ])
+
+        with tab1:
+            _render_suche()
+
+        with tab2:
+            _render_alle_versicherungen()
+
+        with tab3:
+            _render_neue_versicherung()
+
+
+def _render_zentralruf():
+    """Zentralruf der Autoversicherer - Versicherungsabfrage"""
+    st.subheader("🔍 Zentralruf der Autoversicherer")
+
+    st.markdown("""
+    <div style="background-color: #e8f4f8; padding: 15px; border-radius: 10px; border-left: 4px solid #0066cc; margin-bottom: 20px;">
+        <strong>ℹ️ Über den Zentralruf</strong><br>
+        Der Zentralruf der Autoversicherer ermöglicht die Ermittlung der gegnerischen
+        Kfz-Haftpflichtversicherung anhand des Kennzeichens und Unfalldatums.<br>
+        <strong>Telefon:</strong> 0800 250 260 0 (kostenlos)<br>
+        <strong>Online:</strong> www.zentralruf.de
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Aktives Projekt laden falls vorhanden
+    aktives_projekt_id = st.session_state.get("aktives_projekt_id")
+    projekt_daten = None
+
+    if aktives_projekt_id:
+        try:
+            from src.models import UnfallProjekt
+            with get_session() as db:
+                projekt = db.query(UnfallProjekt).filter(UnfallProjekt.id == aktives_projekt_id).first()
+                if projekt:
+                    projekt_daten = {
+                        'kennzeichen': projekt.kfz_gegner or '',
+                        'unfalldatum': projekt.datum_unfall.strftime('%d.%m.%Y') if projekt.datum_unfall else '',
+                        'unfallort': projekt.ort_unfall or ''
+                    }
+                    st.info(f"📁 Daten aus Projekt: {projekt.aktenzeichen}")
+        except Exception:
+            pass
+
+    st.markdown("### Daten für Zentralruf-Anfrage")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        # Kennzeichen
+        default_kz = projekt_daten.get('kennzeichen', '') if projekt_daten else ''
+        kennzeichen = st.text_input(
+            "🚗 Kennzeichen des Unfallgegners *",
+            value=default_kz,
+            placeholder="z.B. B-AB 1234",
+            help="Das Kennzeichen des gegnerischen Fahrzeugs"
+        )
+
+        # Unfalldatum
+        default_datum = projekt_daten.get('unfalldatum', '') if projekt_daten else ''
+        unfalldatum = st.text_input(
+            "📅 Unfalldatum *",
+            value=default_datum,
+            placeholder="z.B. 28.12.2025",
+            help="Datum des Unfalls im Format TT.MM.JJJJ"
+        )
+
+    with col2:
+        # Unfallort (optional)
+        default_ort = projekt_daten.get('unfallort', '') if projekt_daten else ''
+        unfallort = st.text_input(
+            "📍 Unfallort",
+            value=default_ort,
+            placeholder="z.B. Berlin, Hauptstraße",
+            help="Ort des Unfalls (optional, aber hilfreich)"
+        )
+
+        # Unfallland
+        unfallland = st.selectbox(
+            "🌍 Unfallland",
+            ["Deutschland", "Österreich", "Schweiz", "Andere EU-Länder"],
+            help="In welchem Land hat sich der Unfall ereignet?"
+        )
+
+    st.markdown("---")
+
+    # Kopierbereich
+    st.markdown("### 📋 Daten zum Kopieren")
+
+    if kennzeichen or unfalldatum:
+        col_copy1, col_copy2, col_copy3 = st.columns(3)
+
+        with col_copy1:
+            st.text_input("Kennzeichen:", value=kennzeichen, key="copy_kz", disabled=True)
+            if kennzeichen:
+                st.caption("📋 Markieren und kopieren (Strg+C)")
+
+        with col_copy2:
+            st.text_input("Unfalldatum:", value=unfalldatum, key="copy_datum", disabled=True)
+            if unfalldatum:
+                st.caption("📋 Markieren und kopieren (Strg+C)")
+
+        with col_copy3:
+            st.text_input("Unfallort:", value=unfallort, key="copy_ort", disabled=True)
+            if unfallort:
+                st.caption("📋 Markieren und kopieren (Strg+C)")
+
+        # Alle Daten zusammen
+        alle_daten = f"Kennzeichen: {kennzeichen}\nUnfalldatum: {unfalldatum}\nUnfallort: {unfallort}"
+        st.text_area("Alle Daten:", value=alle_daten, height=100, key="copy_alle")
+
+    st.markdown("---")
+
+    # Buttons
+    col_btn1, col_btn2 = st.columns(2)
+
+    with col_btn1:
+        # Zentralruf Website öffnen
+        st.markdown("""
+        <a href="https://www.zentralruf.de/online-anfrage/anfrageformular" target="_blank"
+           style="display: inline-block; background-color: #0066cc; color: white;
+                  padding: 12px 24px; border-radius: 8px; text-decoration: none;
+                  font-weight: bold; width: 100%; text-align: center;">
+            🔍 Zentralruf.de öffnen
+        </a>
+        """, unsafe_allow_html=True)
+
+    with col_btn2:
+        # Telefonische Anfrage
+        st.markdown("""
+        <a href="tel:08002502600"
+           style="display: inline-block; background-color: #28a745; color: white;
+                  padding: 12px 24px; border-radius: 8px; text-decoration: none;
+                  font-weight: bold; width: 100%; text-align: center;">
+            📞 0800 250 260 0 anrufen
+        </a>
+        """, unsafe_allow_html=True)
+
+    # Anleitung
+    with st.expander("📖 Anleitung zur Nutzung"):
+        st.markdown("""
+        **So nutzen Sie den Zentralruf:**
+
+        1. **Daten oben eingeben** oder aus dem aktiven Projekt übernehmen
+        2. **"Zentralruf.de öffnen"** klicken - die Website öffnet sich in einem neuen Tab
+        3. **Daten kopieren** und in das Online-Formular einfügen:
+           - Kennzeichen
+           - Unfalldatum
+           - Ggf. Unfallort und -land
+        4. **Anfrage absenden** - Sie erhalten die Versicherungsdaten
+
+        **Alternative: Telefonische Anfrage**
+        - Rufen Sie **0800 250 260 0** an (kostenlos)
+        - Halten Sie Kennzeichen und Unfalldatum bereit
+        - Die Auskunft erfolgt sofort
+
+        **Hinweis:**
+        - Der Zentralruf ist Mo-Fr 8-20 Uhr erreichbar
+        - Die Online-Anfrage ist 24/7 möglich
+        - Die Auskunft ist kostenlos
+        """)
+
+    # Ergebnis speichern
+    st.markdown("---")
+    st.markdown("### 💾 Ergebnis eintragen")
+
+    with st.form("zentralruf_ergebnis"):
+        col_e1, col_e2 = st.columns(2)
+
+        with col_e1:
+            vers_name = st.text_input("Versicherungsname", placeholder="z.B. Allianz Versicherungs-AG")
+            vers_vunr = st.text_input("VUNR", placeholder="z.B. 1001")
+
+        with col_e2:
+            vers_schadennr = st.text_input("Schadennummer (falls bekannt)", placeholder="")
+            vers_telefon = st.text_input("Schaden-Hotline", placeholder="")
+
+        if st.form_submit_button("✓ Im Projekt speichern", type="primary"):
+            if vers_name and aktives_projekt_id:
+                try:
+                    from src.models import UnfallProjekt
+                    with get_session() as db:
+                        projekt = db.query(UnfallProjekt).filter(UnfallProjekt.id == aktives_projekt_id).first()
+                        if projekt:
+                            projekt.versicherung_gegner = vers_name
+                            if vers_schadennr:
+                                projekt.schadennummer_gegner = vers_schadennr
+                            db.commit()
+                            st.success(f"✓ Versicherungsdaten im Projekt gespeichert!")
+                except Exception as e:
+                    st.error(f"Fehler beim Speichern: {e}")
+            elif not aktives_projekt_id:
+                st.warning("Kein aktives Projekt ausgewählt. Bitte wählen Sie zuerst ein Projekt.")
+            else:
+                st.warning("Bitte mindestens den Versicherungsnamen eingeben.")
 
 
 def _render_suche():
