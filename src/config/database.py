@@ -45,7 +45,8 @@ def init_db():
         Organisation, User, Fahrzeug, UnfallProjekt,
         Dokument, TimelineMeilenstein, KostenPosition,
         ErsatzwagenAnbieter, MietfahrzeugAngebot,
-        GebuehrenBerechnung, Korrespondenz
+        GebuehrenBerechnung, Korrespondenz,
+        UnfallaufnahmeBeteiligter
     )
 
     engine = get_engine()

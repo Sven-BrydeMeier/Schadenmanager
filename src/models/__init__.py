@@ -18,6 +18,7 @@ from src.models.audit_log import AuditLog, AktionTyp, AktionKategorie
 from src.models.notiz import Notiz, Mahnung
 from src.models.checkliste import ChecklistenItem
 from src.models.signatur import DigitaleSignatur, SignaturAnforderung
+from src.models.unfallaufnahme_beteiligter import UnfallaufnahmeBeteiligter
 
 # Models aus Services (dort definiert wegen komplexer Abhängigkeiten)
 from src.services.dsgvo import DSGVOProtokoll, DSGVOAktionTyp
@@ -65,6 +66,7 @@ __all__ = [
     'AuditLog', 'AktionTyp', 'AktionKategorie',
     'Notiz', 'Mahnung', 'ChecklistenItem',
     'DigitaleSignatur', 'SignaturAnforderung',
+    'UnfallaufnahmeBeteiligter',
     'DSGVOProtokoll', 'DSGVOAktionTyp',
     'Ermittlungsakte', 'ErmittlungsakteWeitergabe', 'ErmittlungsakteStatus',
     # Neue Models

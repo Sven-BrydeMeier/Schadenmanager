@@ -11,6 +11,11 @@ import requests
 import re
 
 from src.config.database import get_session
+from src.models.unfallprojekt import UnfallProjekt
+from src.models.unfallaufnahme_beteiligter import UnfallaufnahmeBeteiligter
+from src.models.dokument import Dokument
+from src.models.enums import DokumentTyp
+from src.services.auth import get_current_user_id
 
 # OCR-Imports (optional, falls verfügbar)
 OCR_AVAILABLE = False
@@ -1283,6 +1288,10 @@ def _render_schritt_beteiligte():
                     if ort:
                         adresse_komplett += f" {ort}"
 
+                # Prüfen ob OCR verwendet wurde
+                ocr_ergebnis = st.session_state.unfallaufnahme.get('ocr_ergebnis', {})
+                ocr_verwendet = bool(ocr_ergebnis.get('vorname') or ocr_ergebnis.get('nachname'))
+
                 neuer_beteiligter = {
                     'rolle': rolle,
                     'vorname': vorname,
@@ -1297,7 +1306,8 @@ def _render_schritt_beteiligte():
                     'adresse': adresse_komplett,  # Für Anzeige und Kompatibilität
                     'versicherung': versicherung,
                     'versicherungsnr': versicherungsnr,
-                    'kennzeichen': kennzeichen
+                    'kennzeichen': kennzeichen,
+                    'ocr_erfasst': ocr_verwendet  # Flag ob OCR verwendet wurde
                 }
                 st.session_state.unfallaufnahme['beteiligte'].append(neuer_beteiligter)
 
@@ -1622,13 +1632,197 @@ def _render_schritt_abschluss():
 
 
 def _speichere_unfallaufnahme(daten: dict):
-    """Speichert die Unfallaufnahme in der Datenbank"""
-    # TODO: Implementierung der Speicherung
-    # - Neues UnfallProjekt erstellen
-    # - Fotos als Dokumente speichern
-    # - Beteiligte anlegen
+    """
+    Speichert die Unfallaufnahme vollständig in der Datenbank.
 
-    import time
-    time.sleep(1)  # Simuliere Speichervorgang
+    Erstellt:
+    - Ein neues UnfallProjekt
+    - Alle Beteiligten als UnfallaufnahmeBeteiligter
+    - Fotos als Dokumente
 
-    return True
+    Args:
+        daten: Dictionary mit allen Unfallaufnahme-Daten aus session_state
+
+    Returns:
+        Das erstellte UnfallProjekt oder None bei Fehler
+    """
+    import os
+    import uuid
+    from datetime import datetime
+
+    try:
+        with get_session() as db:
+            # 1. Neues UnfallProjekt erstellen
+            projekt = UnfallProjekt()
+
+            # Unfalldaten setzen
+            if daten.get('datum'):
+                datum = daten['datum']
+                if hasattr(datum, 'strftime'):
+                    projekt.datum_unfall = datetime.combine(datum, datetime.min.time())
+                else:
+                    projekt.datum_unfall = datetime.strptime(str(datum), "%Y-%m-%d")
+
+            if daten.get('uhrzeit'):
+                uhrzeit = daten['uhrzeit']
+                if hasattr(uhrzeit, 'strftime'):
+                    projekt.uhrzeit_unfall = uhrzeit.strftime("%H:%M")
+                else:
+                    projekt.uhrzeit_unfall = str(uhrzeit)[:5]
+
+            # Unfallort aus ort_details zusammensetzen
+            ort_details = daten.get('ort_details', {})
+            if ort_details:
+                ort_teile = []
+                if ort_details.get('strasse'):
+                    strasse = ort_details['strasse']
+                    if ort_details.get('hausnummer'):
+                        strasse += f" {ort_details['hausnummer']}"
+                    ort_teile.append(strasse)
+                if ort_details.get('plz') or ort_details.get('ort'):
+                    plz_ort = ""
+                    if ort_details.get('plz'):
+                        plz_ort = ort_details['plz']
+                    if ort_details.get('ort'):
+                        plz_ort += f" {ort_details['ort']}" if plz_ort else ort_details['ort']
+                    ort_teile.append(plz_ort)
+                projekt.ort_unfall = ", ".join(ort_teile)
+            elif daten.get('ort'):
+                projekt.ort_unfall = daten['ort']
+
+            # GPS-Koordinaten in Beschreibung speichern
+            if daten.get('gps_koordinaten'):
+                projekt.beschreibung_unfall = f"GPS: {daten['gps_koordinaten']}"
+
+            # Wetter in Beschreibung hinzufügen
+            if daten.get('wetter'):
+                if projekt.beschreibung_unfall:
+                    projekt.beschreibung_unfall += f"\nWetter: {daten['wetter']}"
+                else:
+                    projekt.beschreibung_unfall = f"Wetter: {daten['wetter']}"
+
+            # Notizen hinzufügen
+            if daten.get('notizen'):
+                if projekt.beschreibung_unfall:
+                    projekt.beschreibung_unfall += f"\n\nNotizen: {daten['notizen']}"
+                else:
+                    projekt.beschreibung_unfall = daten['notizen']
+
+            # User-ID des Unfallopfers
+            try:
+                user_id = get_current_user_id()
+                if user_id:
+                    projekt.unfallopfer_user_id = user_id
+                    projekt.angelegt_von_user_id = user_id
+            except Exception:
+                pass  # User-ID ist optional
+
+            projekt.status = "OFFEN"
+
+            db.add(projekt)
+            db.flush()  # Um die projekt.id zu erhalten
+
+            # 2. Beteiligte speichern
+            for beteiligter_daten in daten.get('beteiligte', []):
+                beteiligter = UnfallaufnahmeBeteiligter(
+                    unfallprojekt_id=projekt.id,
+                    rolle=beteiligter_daten.get('rolle', 'SONSTIG'),
+                    vorname=beteiligter_daten.get('vorname', ''),
+                    nachname=beteiligter_daten.get('name', ''),
+                    geburtsdatum=beteiligter_daten.get('geburtsdatum'),
+                    telefon=beteiligter_daten.get('telefon', ''),
+                    email=beteiligter_daten.get('email', ''),
+                    strasse=beteiligter_daten.get('strasse', ''),
+                    hausnummer=beteiligter_daten.get('hausnummer', ''),
+                    plz=beteiligter_daten.get('plz', ''),
+                    ort=beteiligter_daten.get('ort', ''),
+                    adresse_komplett=beteiligter_daten.get('adresse', ''),
+                    kennzeichen=beteiligter_daten.get('kennzeichen', ''),
+                    versicherung=beteiligter_daten.get('versicherung', ''),
+                    versicherungsnummer=beteiligter_daten.get('versicherungsnr', ''),
+                    ocr_erfasst=beteiligter_daten.get('ocr_erfasst', False)
+                )
+                db.add(beteiligter)
+
+            # 3. Fotos als Dokumente speichern
+            fotos = daten.get('fotos', {})
+            upload_verzeichnis = os.path.join("uploads", "unfallaufnahme", str(projekt.id))
+            os.makedirs(upload_verzeichnis, exist_ok=True)
+
+            for foto_typ, foto_daten in fotos.items():
+                if foto_daten:
+                    # Foto-Datei speichern
+                    dateiname = f"{foto_typ}_{uuid.uuid4().hex[:8]}.jpg"
+                    dateipfad = os.path.join(upload_verzeichnis, dateiname)
+
+                    try:
+                        # Falls es ein UploadedFile ist
+                        if hasattr(foto_daten, 'getvalue'):
+                            with open(dateipfad, 'wb') as f:
+                                f.write(foto_daten.getvalue())
+                        elif hasattr(foto_daten, 'read'):
+                            with open(dateipfad, 'wb') as f:
+                                f.write(foto_daten.read())
+                        else:
+                            continue  # Unbekanntes Format
+
+                        # Dokument erstellen
+                        dokument = Dokument(
+                            unfallprojekt_id=projekt.id,
+                            dokument_typ=DokumentTyp.SONSTIG,
+                            original_dateiname=dateiname,
+                            dateipfad=dateipfad,
+                            beschreibung=f"Unfallaufnahme: {foto_typ}",
+                            status="HOCHGELADEN"
+                        )
+
+                        try:
+                            user_id = get_current_user_id()
+                            if user_id:
+                                dokument.hochgeladen_von_user_id = user_id
+                        except Exception:
+                            pass
+
+                        db.add(dokument)
+                    except Exception as e:
+                        # Foto-Speicherung fehlgeschlagen, aber Prozess fortsetzen
+                        print(f"Fehler beim Speichern des Fotos {foto_typ}: {e}")
+
+            # 4. Kennzeichen-Fotos speichern
+            for i, kennzeichen_foto in enumerate(daten.get('kennzeichen_fotos', [])):
+                if kennzeichen_foto:
+                    dateiname = f"kennzeichen_{i+1}_{uuid.uuid4().hex[:8]}.jpg"
+                    dateipfad = os.path.join(upload_verzeichnis, dateiname)
+
+                    try:
+                        if hasattr(kennzeichen_foto, 'getvalue'):
+                            with open(dateipfad, 'wb') as f:
+                                f.write(kennzeichen_foto.getvalue())
+                        elif hasattr(kennzeichen_foto, 'read'):
+                            with open(dateipfad, 'wb') as f:
+                                f.write(kennzeichen_foto.read())
+                        else:
+                            continue
+
+                        dokument = Dokument(
+                            unfallprojekt_id=projekt.id,
+                            dokument_typ=DokumentTyp.SONSTIG,
+                            original_dateiname=dateiname,
+                            dateipfad=dateipfad,
+                            beschreibung=f"Kennzeichen-Foto {i+1}",
+                            status="HOCHGELADEN"
+                        )
+                        db.add(dokument)
+                    except Exception as e:
+                        print(f"Fehler beim Speichern des Kennzeichen-Fotos: {e}")
+
+            # Alles speichern
+            db.commit()
+
+            return projekt
+
+    except Exception as e:
+        import traceback
+        print(f"Fehler beim Speichern der Unfallaufnahme: {e}")
+        print(traceback.format_exc())
+        raise e
