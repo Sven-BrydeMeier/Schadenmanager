@@ -22,10 +22,15 @@ class OrgTyp(PyEnum):
 
 
 class MeilensteinStatus(PyEnum):
-    """Status für Timeline-Meilensteine (Ampel)"""
+    """Status für Timeline-Meilensteine (Ampel + Workflow)"""
+    # Ampel-System
     ROT = "ROT"
     ORANGE = "ORANGE"
     GRUEN = "GRUEN"
+    # Workflow-System
+    ERLEDIGT = "ERLEDIGT"
+    IN_BEARBEITUNG = "IN_BEARBEITUNG"
+    AUSSTEHEND = "AUSSTEHEND"
 
 
 class KostenKategorie(PyEnum):

@@ -48,9 +48,14 @@ class TimelineMeilenstein(Base):
     def status_farbe(self) -> str:
         """Gibt die CSS-Farbe für den Status zurück"""
         farben = {
+            # Ampel-System
             MeilensteinStatus.ROT: "#dc3545",
             MeilensteinStatus.ORANGE: "#fd7e14",
-            MeilensteinStatus.GRUEN: "#28a745"
+            MeilensteinStatus.GRUEN: "#28a745",
+            # Workflow-System
+            MeilensteinStatus.ERLEDIGT: "#28a745",
+            MeilensteinStatus.IN_BEARBEITUNG: "#fd7e14",
+            MeilensteinStatus.AUSSTEHEND: "#6c757d"
         }
         return farben.get(self.status, "#6c757d")
 
@@ -58,13 +63,18 @@ class TimelineMeilenstein(Base):
     def status_icon(self) -> str:
         """Gibt ein Icon für den Status zurück"""
         icons = {
+            # Ampel-System
             MeilensteinStatus.ROT: "🔴",
             MeilensteinStatus.ORANGE: "🟠",
-            MeilensteinStatus.GRUEN: "🟢"
+            MeilensteinStatus.GRUEN: "🟢",
+            # Workflow-System
+            MeilensteinStatus.ERLEDIGT: "✅",
+            MeilensteinStatus.IN_BEARBEITUNG: "🔄",
+            MeilensteinStatus.AUSSTEHEND: "⏳"
         }
         return icons.get(self.status, "⚪")
 
     @property
     def ist_erledigt(self) -> bool:
         """Prüft ob der Meilenstein erledigt ist"""
-        return self.status == MeilensteinStatus.GRUEN
+        return self.status in (MeilensteinStatus.GRUEN, MeilensteinStatus.ERLEDIGT)
