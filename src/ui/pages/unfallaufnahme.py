@@ -785,7 +785,14 @@ def _render_schritt_wann_wo():
                                 adresse = _reverse_geocode(lat, lng)
 
                                 if adresse:
-                                    # Adressfelder aktualisieren
+                                    # Adressfelder in Session State für Widgets setzen
+                                    st.session_state['addr_strasse'] = adresse.get('strasse', '')
+                                    st.session_state['addr_hausnummer'] = adresse.get('hausnummer', '')
+                                    st.session_state['addr_plz'] = adresse.get('plz', '')
+                                    st.session_state['addr_ort'] = adresse.get('ort', '')
+                                    st.session_state['addr_land'] = adresse.get('land', 'Deutschland') or 'Deutschland'
+
+                                    # Auch in ort_details speichern
                                     st.session_state.unfallaufnahme['ort_details'] = {
                                         'strasse': adresse.get('strasse', ''),
                                         'hausnummer': adresse.get('hausnummer', ''),
@@ -807,42 +814,55 @@ def _render_schritt_wann_wo():
     # Manuelle Adresseingabe (immer anzeigen)
     st.markdown("#### Adresse")
 
+    # Initialisiere Widget-Keys aus ort_details falls nicht vorhanden
+    ort_details = st.session_state.unfallaufnahme.get('ort_details', {})
+    if 'addr_strasse' not in st.session_state:
+        st.session_state['addr_strasse'] = ort_details.get('strasse', '')
+    if 'addr_hausnummer' not in st.session_state:
+        st.session_state['addr_hausnummer'] = ort_details.get('hausnummer', '')
+    if 'addr_plz' not in st.session_state:
+        st.session_state['addr_plz'] = ort_details.get('plz', '')
+    if 'addr_ort' not in st.session_state:
+        st.session_state['addr_ort'] = ort_details.get('ort', '')
+    if 'addr_land' not in st.session_state:
+        st.session_state['addr_land'] = ort_details.get('land', 'Deutschland')
+
     col_str, col_nr = st.columns([3, 1])
     with col_str:
         strasse = st.text_input(
             "Straße",
-            value=st.session_state.unfallaufnahme.get('ort_details', {}).get('strasse', ''),
-            placeholder="z.B. Hauptstraße"
+            placeholder="z.B. Hauptstraße",
+            key="addr_strasse"
         )
     with col_nr:
         hausnummer = st.text_input(
             "Hausnr.",
-            value=st.session_state.unfallaufnahme.get('ort_details', {}).get('hausnummer', ''),
-            placeholder="z.B. 123"
+            placeholder="z.B. 123",
+            key="addr_hausnummer"
         )
 
     col_plz, col_ort, col_land = st.columns([1, 2, 1])
     with col_plz:
         plz = st.text_input(
             "PLZ",
-            value=st.session_state.unfallaufnahme.get('ort_details', {}).get('plz', ''),
             placeholder="12345",
-            max_chars=5
+            max_chars=5,
+            key="addr_plz"
         )
     with col_ort:
         ort = st.text_input(
             "Ort",
-            value=st.session_state.unfallaufnahme.get('ort_details', {}).get('ort', ''),
-            placeholder="z.B. Berlin"
+            placeholder="z.B. Berlin",
+            key="addr_ort"
         )
     with col_land:
         land = st.text_input(
             "Land",
-            value=st.session_state.unfallaufnahme.get('ort_details', {}).get('land', 'Deutschland'),
-            placeholder="Deutschland"
+            placeholder="Deutschland",
+            key="addr_land"
         )
 
-    # Speichern
+    # Speichern der Werte aus den Widgets in ort_details
     st.session_state.unfallaufnahme['ort_details'] = {
         'strasse': strasse,
         'hausnummer': hausnummer,
