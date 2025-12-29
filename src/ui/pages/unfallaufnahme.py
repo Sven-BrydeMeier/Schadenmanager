@@ -15,7 +15,6 @@ from src.models.unfallprojekt import UnfallProjekt
 from src.models.unfallaufnahme_beteiligter import UnfallaufnahmeBeteiligter
 from src.models.dokument import Dokument
 from src.models.enums import DokumentTyp
-from src.services.auth import get_current_user_id
 
 # OCR-Imports (optional, falls verfügbar)
 OCR_AVAILABLE = False
@@ -1709,13 +1708,10 @@ def _speichere_unfallaufnahme(daten: dict):
                     projekt.beschreibung_unfall = daten['notizen']
 
             # User-ID des Unfallopfers
-            try:
-                user_id = get_current_user_id()
-                if user_id:
-                    projekt.unfallopfer_user_id = user_id
-                    projekt.angelegt_von_user_id = user_id
-            except Exception:
-                pass  # User-ID ist optional
+            user_id = st.session_state.get("user_id")
+            if user_id:
+                projekt.unfallopfer_user_id = user_id
+                projekt.angelegt_von_user_id = user_id
 
             projekt.status = "OFFEN"
 
@@ -1776,12 +1772,9 @@ def _speichere_unfallaufnahme(daten: dict):
                             status="HOCHGELADEN"
                         )
 
-                        try:
-                            user_id = get_current_user_id()
-                            if user_id:
-                                dokument.hochgeladen_von_user_id = user_id
-                        except Exception:
-                            pass
+                        user_id = st.session_state.get("user_id")
+                        if user_id:
+                            dokument.hochgeladen_von_user_id = user_id
 
                         db.add(dokument)
                     except Exception as e:
