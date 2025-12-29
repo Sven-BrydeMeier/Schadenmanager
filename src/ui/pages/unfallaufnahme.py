@@ -210,7 +210,8 @@ def _reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
     Returns:
         Dictionary mit Adressdaten oder None bei Fehler
     """
-    fehler_details = []
+    # Debug-Ausgabe
+    st.write(f"🔍 Debug: Suche Adresse für Koordinaten {lat}, {lng}")
 
     # Versuch 1: OpenStreetMap Nominatim API
     try:
@@ -229,73 +230,89 @@ def _reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
             "User-Agent": "Schadenmanager-Unfallaufnahme/1.0 (https://github.com/schadenmanager)"
         }
 
+        st.write("🌐 Debug: Rufe Nominatim API auf...")
+
         response = requests.get(url, params=params, headers=headers, timeout=10)
-        response.raise_for_status()
 
-        data = response.json()
-        address = data.get("address", {})
+        st.write(f"📡 Debug: HTTP Status: {response.status_code}")
 
-        # Straße ermitteln (verschiedene Felder prüfen)
-        strasse = (
-            address.get("road") or
-            address.get("pedestrian") or
-            address.get("footway") or
-            address.get("street") or
-            address.get("path") or
-            ""
-        )
+        if response.status_code == 200:
+            data = response.json()
 
-        # Hausnummer
-        hausnummer = address.get("house_number", "")
+            # Debug: Zeige rohe Antwort
+            with st.expander("🔧 Debug: Rohe API-Antwort"):
+                st.json(data)
 
-        # PLZ
-        plz = address.get("postcode", "")
+            address = data.get("address", {})
 
-        # Ort ermitteln (Stadt, Gemeinde, Dorf) - in Prioritätsreihenfolge
-        ort = (
-            address.get("city") or
-            address.get("town") or
-            address.get("village") or
-            address.get("municipality") or
-            address.get("hamlet") or
-            address.get("suburb") or
-            address.get("county") or
-            ""
-        )
+            # Straße ermitteln (verschiedene Felder prüfen)
+            strasse = (
+                address.get("road") or
+                address.get("pedestrian") or
+                address.get("footway") or
+                address.get("street") or
+                address.get("path") or
+                ""
+            )
 
-        # Bundesland und Land
-        bundesland = address.get("state", "")
-        land = address.get("country", "")
-        land_code = address.get("country_code", "").upper()
+            # Hausnummer
+            hausnummer = address.get("house_number", "")
 
-        result = {
-            "strasse": strasse,
-            "hausnummer": hausnummer,
-            "plz": plz,
-            "ort": ort,
-            "bundesland": bundesland,
-            "land": land,
-            "land_code": land_code,
-            "display_name": data.get("display_name", ""),
-            "raw": address
-        }
+            # PLZ
+            plz = address.get("postcode", "")
 
-        return result
+            # Ort ermitteln (Stadt, Gemeinde, Dorf) - in Prioritätsreihenfolge
+            ort = (
+                address.get("city") or
+                address.get("town") or
+                address.get("village") or
+                address.get("municipality") or
+                address.get("hamlet") or
+                address.get("suburb") or
+                address.get("county") or
+                ""
+            )
+
+            # Bundesland und Land
+            bundesland = address.get("state", "")
+            land = address.get("country", "")
+            land_code = address.get("country_code", "").upper()
+
+            result = {
+                "strasse": strasse,
+                "hausnummer": hausnummer,
+                "plz": plz,
+                "ort": ort,
+                "bundesland": bundesland,
+                "land": land,
+                "land_code": land_code,
+                "display_name": data.get("display_name", ""),
+                "raw": address
+            }
+
+            st.write(f"✅ Debug: Gefunden - Straße: '{strasse}', PLZ: '{plz}', Ort: '{ort}'")
+
+            return result
+        else:
+            st.error(f"❌ Nominatim API Fehler: HTTP {response.status_code}")
+            st.write(f"Response: {response.text[:500]}")
 
     except requests.exceptions.Timeout:
-        fehler_details.append("Nominatim: Timeout (10s)")
-    except requests.exceptions.HTTPError as e:
-        fehler_details.append(f"Nominatim HTTP-Fehler: {e.response.status_code}")
-    except requests.exceptions.ConnectionError:
-        fehler_details.append("Nominatim: Keine Verbindung")
+        st.error("❌ Nominatim: Timeout (10s) - Server antwortet nicht")
+    except requests.exceptions.ConnectionError as e:
+        st.error(f"❌ Nominatim: Keine Verbindung - {str(e)[:100]}")
     except requests.exceptions.RequestException as e:
-        fehler_details.append(f"Nominatim: {str(e)[:50]}")
-    except json.JSONDecodeError:
-        fehler_details.append("Nominatim: Ungültige Antwort")
+        st.error(f"❌ Nominatim Fehler: {str(e)[:100]}")
+    except json.JSONDecodeError as e:
+        st.error(f"❌ Nominatim: Ungültige JSON-Antwort - {str(e)}")
+    except Exception as e:
+        st.error(f"❌ Unerwarteter Fehler bei Nominatim: {type(e).__name__}: {str(e)}")
 
     # Versuch 2: Photon API (Komoot) als Fallback
+    st.write("🔄 Debug: Versuche Photon API als Fallback...")
+
     try:
-        url = f"https://photon.komoot.io/reverse"
+        url = "https://photon.komoot.io/reverse"
         params = {
             "lat": lat,
             "lon": lng,
@@ -306,52 +323,60 @@ def _reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
         }
 
         response = requests.get(url, params=params, headers=headers, timeout=10)
-        response.raise_for_status()
 
-        data = response.json()
+        st.write(f"📡 Debug: Photon HTTP Status: {response.status_code}")
 
-        if data.get("features") and len(data["features"]) > 0:
-            props = data["features"][0].get("properties", {})
+        if response.status_code == 200:
+            data = response.json()
 
-            strasse = props.get("street", "") or props.get("name", "")
-            ort = (
-                props.get("city") or
-                props.get("town") or
-                props.get("village") or
-                props.get("locality") or
-                ""
-            )
+            # Debug: Zeige rohe Antwort
+            with st.expander("🔧 Debug: Photon API-Antwort"):
+                st.json(data)
 
-            display_parts = []
-            if strasse:
-                display_parts.append(strasse)
-            if props.get("housenumber"):
-                display_parts.append(props["housenumber"])
-            if props.get("postcode"):
-                display_parts.append(props["postcode"])
-            if ort:
-                display_parts.append(ort)
+            if data.get("features") and len(data["features"]) > 0:
+                props = data["features"][0].get("properties", {})
 
-            return {
-                "strasse": strasse,
-                "hausnummer": props.get("housenumber", ""),
-                "plz": props.get("postcode", ""),
-                "ort": ort,
-                "bundesland": props.get("state", ""),
-                "land": props.get("country", ""),
-                "land_code": props.get("countrycode", "").upper(),
-                "display_name": ", ".join(display_parts),
-                "raw": props
-            }
+                strasse = props.get("street", "") or props.get("name", "")
+                ort = (
+                    props.get("city") or
+                    props.get("town") or
+                    props.get("village") or
+                    props.get("locality") or
+                    ""
+                )
+
+                display_parts = []
+                if strasse:
+                    display_parts.append(strasse)
+                if props.get("housenumber"):
+                    display_parts.append(props["housenumber"])
+                if props.get("postcode"):
+                    display_parts.append(props["postcode"])
+                if ort:
+                    display_parts.append(ort)
+
+                result = {
+                    "strasse": strasse,
+                    "hausnummer": props.get("housenumber", ""),
+                    "plz": props.get("postcode", ""),
+                    "ort": ort,
+                    "bundesland": props.get("state", ""),
+                    "land": props.get("country", ""),
+                    "land_code": props.get("countrycode", "").upper(),
+                    "display_name": ", ".join(display_parts),
+                    "raw": props
+                }
+
+                st.write(f"✅ Debug (Photon): Gefunden - Straße: '{strasse}', PLZ: '{props.get('postcode', '')}', Ort: '{ort}'")
+
+                return result
+            else:
+                st.warning("⚠️ Photon API: Keine Ergebnisse gefunden")
 
     except Exception as e:
-        fehler_details.append(f"Photon: {str(e)[:50]}")
+        st.error(f"❌ Photon API Fehler: {type(e).__name__}: {str(e)}")
 
-    # Wenn alle Versuche fehlgeschlagen
-    if fehler_details:
-        st.warning(f"⚠️ Adressermittlung eingeschränkt: {', '.join(fehler_details)}")
-        st.info("💡 Bitte geben Sie die Adresse manuell ein oder versuchen Sie es später erneut.")
-
+    st.error("❌ Beide Geocoding-APIs sind fehlgeschlagen. Bitte Adresse manuell eingeben.")
     return None
 
 
@@ -779,37 +804,55 @@ def _render_schritt_wann_wo():
                     st.info("✓ Adresse wurde aus GPS-Koordinaten ermittelt.")
                 else:
                     # Button für Adressermittlung anzeigen
+                    st.write(f"🔧 Debug: Button wird angezeigt. lat={lat}, lng={lng}")
+
                     if st.button("📍 Adresse aus Koordinaten ermitteln", type="primary", key="geocode_btn"):
-                        with st.spinner("🔄 Ermittle Adresse von OpenStreetMap..."):
-                            try:
-                                adresse = _reverse_geocode(lat, lng)
+                        st.write("🔧 Debug: Button wurde geklickt!")
 
-                                if adresse:
-                                    # Adressfelder in Session State für Widgets setzen
-                                    st.session_state['addr_strasse'] = adresse.get('strasse', '')
-                                    st.session_state['addr_hausnummer'] = adresse.get('hausnummer', '')
-                                    st.session_state['addr_plz'] = adresse.get('plz', '')
-                                    st.session_state['addr_ort'] = adresse.get('ort', '')
-                                    st.session_state['addr_land'] = adresse.get('land', 'Deutschland') or 'Deutschland'
+                        try:
+                            adresse = _reverse_geocode(lat, lng)
 
-                                    # Auch in ort_details speichern
-                                    st.session_state.unfallaufnahme['ort_details'] = {
-                                        'strasse': adresse.get('strasse', ''),
-                                        'hausnummer': adresse.get('hausnummer', ''),
-                                        'plz': adresse.get('plz', ''),
-                                        'ort': adresse.get('ort', ''),
-                                        'land': adresse.get('land', 'Deutschland') or 'Deutschland'
-                                    }
-                                    # Merken welche Koordinaten aufgelöst wurden
-                                    st.session_state.unfallaufnahme['letzte_aufgeloeste_coords'] = gps_koordinaten
-                                    st.session_state.unfallaufnahme['adresse_ermittelt'] = True
-                                    st.success(f"✓ Adresse gefunden: {adresse.get('display_name', '')}")
+                            st.write(f"🔧 Debug: Geocoding Ergebnis: {adresse}")
+
+                            if adresse:
+                                st.write("🔧 Debug: Adresse gefunden, setze Session State...")
+
+                                # Adressfelder in Session State für Widgets setzen
+                                st.session_state['addr_strasse'] = adresse.get('strasse', '')
+                                st.session_state['addr_hausnummer'] = adresse.get('hausnummer', '')
+                                st.session_state['addr_plz'] = adresse.get('plz', '')
+                                st.session_state['addr_ort'] = adresse.get('ort', '')
+                                st.session_state['addr_land'] = adresse.get('land', 'Deutschland') or 'Deutschland'
+
+                                st.write(f"🔧 Debug: Session State gesetzt:")
+                                st.write(f"  - addr_strasse: {st.session_state.get('addr_strasse')}")
+                                st.write(f"  - addr_plz: {st.session_state.get('addr_plz')}")
+                                st.write(f"  - addr_ort: {st.session_state.get('addr_ort')}")
+
+                                # Auch in ort_details speichern
+                                st.session_state.unfallaufnahme['ort_details'] = {
+                                    'strasse': adresse.get('strasse', ''),
+                                    'hausnummer': adresse.get('hausnummer', ''),
+                                    'plz': adresse.get('plz', ''),
+                                    'ort': adresse.get('ort', ''),
+                                    'land': adresse.get('land', 'Deutschland') or 'Deutschland'
+                                }
+                                # Merken welche Koordinaten aufgelöst wurden
+                                st.session_state.unfallaufnahme['letzte_aufgeloeste_coords'] = gps_koordinaten
+                                st.session_state.unfallaufnahme['adresse_ermittelt'] = True
+
+                                st.success(f"✅ Adresse gefunden: {adresse.get('display_name', '')}")
+
+                                # Button um Seite neu zu laden und Felder anzuzeigen
+                                if st.button("🔄 Adresse in Felder übernehmen", key="apply_address"):
                                     st.rerun()
-                                else:
-                                    st.error("❌ Adresse konnte nicht ermittelt werden. Bitte manuell eingeben.")
-                            except Exception as e:
-                                st.error(f"❌ Fehler bei der Adressermittlung: {str(e)}")
-                                st.info("💡 Bitte geben Sie die Adresse manuell ein.")
+                            else:
+                                st.error("❌ Adresse konnte nicht ermittelt werden. Bitte manuell eingeben.")
+                        except Exception as e:
+                            st.error(f"❌ Fehler bei der Adressermittlung: {type(e).__name__}: {str(e)}")
+                            import traceback
+                            st.code(traceback.format_exc())
+                            st.info("💡 Bitte geben Sie die Adresse manuell ein.")
 
     # Manuelle Adresseingabe (immer anzeigen)
     st.markdown("#### Adresse")
