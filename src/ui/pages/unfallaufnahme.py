@@ -770,6 +770,11 @@ def _render_schritt_wann_wo():
             key="gps_input"
         )
 
+        # DEBUG: Zeige was im Feld steht
+        st.write(f"🔧 DEBUG: gps_koordinaten = '{gps_koordinaten}'")
+        st.write(f"🔧 DEBUG: Typ = {type(gps_koordinaten)}")
+        st.write(f"🔧 DEBUG: Länge = {len(gps_koordinaten) if gps_koordinaten else 0}")
+
         # Speichere aktuelle Koordinaten
         st.session_state.unfallaufnahme['gps_koordinaten'] = gps_koordinaten
 
@@ -785,13 +790,22 @@ def _render_schritt_wann_wo():
             lng = None
             try:
                 parts = gps_koordinaten.replace(" ", "").split(",")
+                st.write(f"🔧 DEBUG: parts = {parts}")
                 if len(parts) == 2:
                     lat = float(parts[0])
                     lng = float(parts[1])
+                    st.write(f"🔧 DEBUG: lat = {lat}, lng = {lng}")
                     if -90 <= lat <= 90 and -180 <= lng <= 180:
                         koordinaten_gueltig = True
-            except ValueError:
-                pass
+                        st.write("🔧 DEBUG: Koordinaten sind gültig!")
+                    else:
+                        st.write("🔧 DEBUG: Koordinaten außerhalb gültiger Bereiche")
+                else:
+                    st.write(f"🔧 DEBUG: Nicht 2 Teile, sondern {len(parts)}")
+            except ValueError as e:
+                st.write(f"🔧 DEBUG: ValueError: {e}")
+
+            st.write(f"🔧 DEBUG: koordinaten_gueltig = {koordinaten_gueltig}")
 
             if not koordinaten_gueltig:
                 st.warning("⚠️ Ungültiges Koordinatenformat. Bitte prüfen Sie die Eingabe.")
