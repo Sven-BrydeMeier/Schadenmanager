@@ -199,26 +199,23 @@ def _ocr_ausweis(image_file) -> Optional[Dict]:
 def _reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
     """
     Ermittelt die Adresse aus GPS-Koordinaten via OpenStreetMap Nominatim API.
-    Mit Fallback-Optionen und robuster Fehlerbehandlung.
+
+    Verwendet die kostenlose Nominatim API mit korrektem User-Agent.
+    Fallback auf Photon API falls Nominatim fehlschlägt.
 
     Args:
-        lat: Breitengrad
-        lng: Längengrad
+        lat: Breitengrad (z.B. 52.520008)
+        lng: Längengrad (z.B. 13.404954)
 
     Returns:
         Dictionary mit Adressdaten oder None bei Fehler
     """
     fehler_details = []
 
-    # Session ohne Proxy erstellen für direkte Verbindung
-    session = requests.Session()
-    # Proxy explizit deaktivieren
-    session.trust_env = False
-    session.proxies = {"http": None, "https": None}
-
-    # Versuch 1: OpenStreetMap Nominatim (ohne Proxy)
+    # Versuch 1: OpenStreetMap Nominatim API
     try:
         url = "https://nominatim.openstreetmap.org/reverse"
+
         params = {
             "lat": lat,
             "lon": lng,
@@ -226,92 +223,134 @@ def _reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
             "addressdetails": 1,
             "accept-language": "de"
         }
+
+        # User-Agent ist PFLICHT für Nominatim API
         headers = {
-            "User-Agent": "Schadenmanager/1.0 (Unfallaufnahme; Contact: admin@schadenmanager.de)"
+            "User-Agent": "Schadenmanager-Unfallaufnahme/1.0 (https://github.com/schadenmanager)"
         }
 
-        response = session.get(url, params=params, headers=headers, timeout=15)
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        response.raise_for_status()
 
-        if response.status_code == 200:
-            data = response.json()
-            address = data.get("address", {})
+        data = response.json()
+        address = data.get("address", {})
 
-            # Straße ermitteln (verschiedene Felder prüfen)
-            strasse = (
-                address.get("road") or
-                address.get("pedestrian") or
-                address.get("footway") or
-                address.get("street") or
-                ""
-            )
+        # Straße ermitteln (verschiedene Felder prüfen)
+        strasse = (
+            address.get("road") or
+            address.get("pedestrian") or
+            address.get("footway") or
+            address.get("street") or
+            address.get("path") or
+            ""
+        )
 
-            # Hausnummer
-            hausnummer = address.get("house_number", "")
+        # Hausnummer
+        hausnummer = address.get("house_number", "")
 
-            # PLZ
-            plz = address.get("postcode", "")
+        # PLZ
+        plz = address.get("postcode", "")
 
-            # Ort ermitteln (Stadt, Gemeinde, Dorf)
+        # Ort ermitteln (Stadt, Gemeinde, Dorf) - in Prioritätsreihenfolge
+        ort = (
+            address.get("city") or
+            address.get("town") or
+            address.get("village") or
+            address.get("municipality") or
+            address.get("hamlet") or
+            address.get("suburb") or
+            address.get("county") or
+            ""
+        )
+
+        # Bundesland und Land
+        bundesland = address.get("state", "")
+        land = address.get("country", "")
+        land_code = address.get("country_code", "").upper()
+
+        result = {
+            "strasse": strasse,
+            "hausnummer": hausnummer,
+            "plz": plz,
+            "ort": ort,
+            "bundesland": bundesland,
+            "land": land,
+            "land_code": land_code,
+            "display_name": data.get("display_name", ""),
+            "raw": address
+        }
+
+        return result
+
+    except requests.exceptions.Timeout:
+        fehler_details.append("Nominatim: Timeout (10s)")
+    except requests.exceptions.HTTPError as e:
+        fehler_details.append(f"Nominatim HTTP-Fehler: {e.response.status_code}")
+    except requests.exceptions.ConnectionError:
+        fehler_details.append("Nominatim: Keine Verbindung")
+    except requests.exceptions.RequestException as e:
+        fehler_details.append(f"Nominatim: {str(e)[:50]}")
+    except json.JSONDecodeError:
+        fehler_details.append("Nominatim: Ungültige Antwort")
+
+    # Versuch 2: Photon API (Komoot) als Fallback
+    try:
+        url = f"https://photon.komoot.io/reverse"
+        params = {
+            "lat": lat,
+            "lon": lng,
+            "lang": "de"
+        }
+        headers = {
+            "User-Agent": "Schadenmanager-Unfallaufnahme/1.0"
+        }
+
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        response.raise_for_status()
+
+        data = response.json()
+
+        if data.get("features") and len(data["features"]) > 0:
+            props = data["features"][0].get("properties", {})
+
+            strasse = props.get("street", "") or props.get("name", "")
             ort = (
-                address.get("city") or
-                address.get("town") or
-                address.get("village") or
-                address.get("municipality") or
-                address.get("county") or
+                props.get("city") or
+                props.get("town") or
+                props.get("village") or
+                props.get("locality") or
                 ""
             )
+
+            display_parts = []
+            if strasse:
+                display_parts.append(strasse)
+            if props.get("housenumber"):
+                display_parts.append(props["housenumber"])
+            if props.get("postcode"):
+                display_parts.append(props["postcode"])
+            if ort:
+                display_parts.append(ort)
 
             return {
                 "strasse": strasse,
-                "hausnummer": hausnummer,
-                "plz": plz,
+                "hausnummer": props.get("housenumber", ""),
+                "plz": props.get("postcode", ""),
                 "ort": ort,
-                "display_name": data.get("display_name", ""),
-                "raw": address
+                "bundesland": props.get("state", ""),
+                "land": props.get("country", ""),
+                "land_code": props.get("countrycode", "").upper(),
+                "display_name": ", ".join(display_parts),
+                "raw": props
             }
-        else:
-            fehler_details.append(f"Nominatim HTTP {response.status_code}")
 
-    except requests.exceptions.ProxyError as e:
-        fehler_details.append(f"Proxy-Fehler: {str(e)[:50]}")
-    except requests.exceptions.SSLError as e:
-        fehler_details.append(f"SSL-Fehler: {str(e)[:50]}")
-    except requests.exceptions.Timeout:
-        fehler_details.append("Timeout: OpenStreetMap antwortet nicht (15s)")
-    except requests.exceptions.ConnectionError as e:
-        fehler_details.append(f"Verbindungsfehler: {str(e)[:50]}")
     except Exception as e:
-        fehler_details.append(f"Fehler: {str(e)[:50]}")
-
-    # Versuch 2: Alternative API (Photon by Komoot) - falls Nominatim fehlschlägt
-    if fehler_details:
-        try:
-            # Photon ist eine schnelle Alternative zu Nominatim
-            url = f"https://photon.komoot.io/reverse?lat={lat}&lon={lng}&lang=de"
-            headers = {"User-Agent": "Schadenmanager/1.0"}
-
-            response = session.get(url, headers=headers, timeout=10)
-
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("features"):
-                    props = data["features"][0].get("properties", {})
-
-                    return {
-                        "strasse": props.get("street", ""),
-                        "hausnummer": props.get("housenumber", ""),
-                        "plz": props.get("postcode", ""),
-                        "ort": props.get("city") or props.get("town") or props.get("village", ""),
-                        "display_name": props.get("name", "") or f"{props.get('street', '')}, {props.get('city', '')}",
-                        "raw": props
-                    }
-        except Exception:
-            pass  # Fallback fehlgeschlagen, weiter zur Fehlermeldung
+        fehler_details.append(f"Photon: {str(e)[:50]}")
 
     # Wenn alle Versuche fehlgeschlagen
     if fehler_details:
-        st.error(f"❌ Adressermittlung fehlgeschlagen: {', '.join(fehler_details)}")
-        st.info("💡 Der Server hat keinen Zugang zu externen Diensten. Bitte geben Sie die Adresse manuell ein.")
+        st.warning(f"⚠️ Adressermittlung eingeschränkt: {', '.join(fehler_details)}")
+        st.info("💡 Bitte geben Sie die Adresse manuell ein oder versuchen Sie es später erneut.")
 
     return None
 
