@@ -398,6 +398,9 @@ def _render_beteiligte_tab(db: Session, projekt: UnfallProjekt):
         ("Gegnerische Versicherung", projekt.versicherung_gegner, projekt.versicherung_gegner_user_id),
     ]
 
+    rolle = st.session_state.get("user_rolle", "")
+    kann_zuweisen = rolle in ["ADMIN", "ANWALT"]
+
     for bezeichnung, user, user_id in beteiligte:
         col1, col2, col3 = st.columns([2, 2, 1])
 
@@ -412,8 +415,58 @@ def _render_beteiligte_tab(db: Session, projekt: UnfallProjekt):
                 st.caption("Nicht zugewiesen")
 
         with col3:
-            if not user_id:
-                pass  # TODO: Zuweisung-Button
+            if not user_id and kann_zuweisen:
+                if st.button("Zuweisen", key=f"assign_{bezeichnung}_{projekt.id}"):
+                    st.session_state[f"show_assign_{bezeichnung}"] = True
+                    st.rerun()
+
+        # Zuweisung-Dialog anzeigen
+        if st.session_state.get(f"show_assign_{bezeichnung}") and kann_zuweisen:
+            with st.expander(f"{bezeichnung} zuweisen", expanded=True):
+                from src.models import User
+                # Benutzer für diese Rolle laden
+                rollen_mapping = {
+                    "Unfallopfer": "UNFALLOPFER",
+                    "Rechtsanwalt": "ANWALT",
+                    "Werkstatt": "WERKSTATT",
+                    "Gutachter": "GUTACHTER",
+                    "Eigene Versicherung": "VERSICHERUNG_EIGEN",
+                    "Gegnerische Versicherung": "VERSICHERUNG_GEGNER",
+                }
+                ziel_rolle = rollen_mapping.get(bezeichnung)
+                if ziel_rolle:
+                    verfuegbare_user = db.query(User).filter(
+                        User.rolle == ziel_rolle,
+                        User.aktiv == True
+                    ).all()
+
+                    if verfuegbare_user:
+                        user_optionen = {f"{u.voller_name} ({u.email})": u.id for u in verfuegbare_user}
+                        auswahl = st.selectbox(
+                            f"{bezeichnung} auswählen",
+                            options=list(user_optionen.keys()),
+                            key=f"select_{bezeichnung}_{projekt.id}"
+                        )
+                        if st.button("Speichern", key=f"save_{bezeichnung}_{projekt.id}"):
+                            feld_mapping = {
+                                "Unfallopfer": "unfallopfer_user_id",
+                                "Rechtsanwalt": "anwalt_user_id",
+                                "Werkstatt": "werkstatt_user_id",
+                                "Gutachter": "gutachter_user_id",
+                                "Eigene Versicherung": "versicherung_eigen_user_id",
+                                "Gegnerische Versicherung": "versicherung_gegner_user_id",
+                            }
+                            setattr(projekt, feld_mapping[bezeichnung], user_optionen[auswahl])
+                            db.commit()
+                            st.session_state[f"show_assign_{bezeichnung}"] = False
+                            st.success(f"{bezeichnung} wurde zugewiesen!")
+                            st.rerun()
+                    else:
+                        st.info(f"Keine Benutzer mit der Rolle '{bezeichnung}' verfügbar.")
+
+                if st.button("Abbrechen", key=f"cancel_{bezeichnung}_{projekt.id}"):
+                    st.session_state[f"show_assign_{bezeichnung}"] = False
+                    st.rerun()
 
     # Einladungslink
     if projekt.einladungs_code:

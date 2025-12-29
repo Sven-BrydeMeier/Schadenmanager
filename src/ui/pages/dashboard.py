@@ -404,7 +404,10 @@ def _render_versicherung_dashboard(db: Session, projekte: List[UnfallProjekt], a
                 with col4:
                     if kp.status_ampel == KostenAmpel.ROT:
                         if st.button("Prüfen", key=f"check_{kp.id}"):
-                            pass  # TODO: Prüfungslogik
+                            # Zur Kosten-Seite navigieren mit aktivem Projekt
+                            st.session_state["aktives_projekt_id"] = projekt.id
+                            st.session_state["page"] = "Kosten"
+                            st.rerun()
 
 
 def _render_kosten_tab(projekt: UnfallProjekt):
