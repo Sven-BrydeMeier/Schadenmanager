@@ -301,8 +301,8 @@ def _render_kosten_uebersicht(db: Session, projekt: UnfallProjekt):
         return
 
     # Zusammenfassung
-    gesamt_gefordert = sum(k.betrag for k in kosten)
-    gesamt_erstattet = sum(k.erstattet_betrag or 0 for k in kosten)
+    gesamt_gefordert = sum((k.betrag_brutto or 0) for k in kosten)
+    gesamt_erstattet = sum((k.bezahlt_betrag or 0) for k in kosten)
     offen = gesamt_gefordert - gesamt_erstattet
 
     col1, col2, col3 = st.columns(3)
@@ -325,14 +325,15 @@ def _render_kosten_uebersicht(db: Session, projekt: UnfallProjekt):
         col1, col2, col3 = st.columns([3, 1, 1])
 
         with col1:
-            st.markdown(f"**{k.beschreibung}**")
-            st.caption(k.kategorie_anzeige if hasattr(k, 'kategorie_anzeige') else str(k.kategorie))
+            st.markdown(f"**{k.beschreibung or 'Ohne Beschreibung'}**")
+            kategorie_text = k.kategorie.value if k.kategorie else "Sonstig"
+            st.caption(kategorie_text)
 
         with col2:
-            st.markdown(f"{float(k.betrag):,.2f} EUR")
+            st.markdown(f"{float(k.betrag_brutto or 0):,.2f} EUR")
 
         with col3:
-            if k.erstattet_betrag and k.erstattet_betrag > 0:
+            if k.bezahlt and k.bezahlt_betrag and k.bezahlt_betrag > 0:
                 st.markdown(badge("Erstattet", "success"), unsafe_allow_html=True)
             else:
                 st.markdown(badge("Offen", "warning"), unsafe_allow_html=True)
