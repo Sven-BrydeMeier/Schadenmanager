@@ -752,7 +752,6 @@ def _render_schritt_wann_wo():
 
         gps_daten_input = st.text_input(
             "GPS-Daten",
-            value="",
             placeholder="Daten hier einfügen...",
             key="gps_data_input",
             label_visibility="collapsed"
@@ -805,7 +804,9 @@ def _render_schritt_wann_wo():
                     st.session_state.unfallaufnahme['letzte_aufgeloeste_coords'] = gps_koordinaten
                     st.session_state.unfallaufnahme['adresse_ermittelt'] = True
 
-                    st.success(f"✅ Daten übernommen: {strasse} {hausnummer}, {plz} {ort}")
+                    # Eingabefeld leeren um erneutes Parsen zu verhindern
+                    del st.session_state['gps_data_input']
+
                     st.rerun()
 
             except Exception as e:
