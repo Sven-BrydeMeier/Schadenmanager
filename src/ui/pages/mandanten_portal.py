@@ -358,11 +358,11 @@ def _render_kontakt(db: Session, projekt: UnfallProjekt):
         st.markdown("#### Ihr Anwalt")
 
         if projekt.anwalt:
-            st.markdown(f"**{projekt.anwalt.vorname} {projekt.anwalt.nachname}**")
+            st.markdown(f"**{projekt.anwalt.vorname or ''} {projekt.anwalt.nachname or ''}**")
             if projekt.anwalt.email:
                 st.markdown(f"E-Mail: {projekt.anwalt.email}")
-            if projekt.anwalt.telefon:
-                st.markdown(f"Telefon: {projekt.anwalt.telefon}")
+            if projekt.anwalt.telefonnummer:
+                st.markdown(f"Telefon: {projekt.anwalt.telefonnummer}")
         else:
             st.info("Noch kein Anwalt zugewiesen.")
 
@@ -370,11 +370,11 @@ def _render_kontakt(db: Session, projekt: UnfallProjekt):
         st.markdown("#### Ihre Werkstatt")
 
         if projekt.werkstatt:
-            st.markdown(f"**{projekt.werkstatt.vorname} {projekt.werkstatt.nachname}**")
+            st.markdown(f"**{projekt.werkstatt.vorname or ''} {projekt.werkstatt.nachname or ''}**")
             if projekt.werkstatt.email:
                 st.markdown(f"E-Mail: {projekt.werkstatt.email}")
-            if projekt.werkstatt.telefon:
-                st.markdown(f"Telefon: {projekt.werkstatt.telefon}")
+            if projekt.werkstatt.telefonnummer:
+                st.markdown(f"Telefon: {projekt.werkstatt.telefonnummer}")
         else:
             st.info("Noch keine Werkstatt zugewiesen.")
 
