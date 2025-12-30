@@ -534,6 +534,49 @@ def render_unfallaufnahme():
 def _render_schritt_wann_wo():
     """Schritt 1: Datum, Uhrzeit, Ort, Wetter"""
 
+    # WICHTIG: Query-Parameter ganz am Anfang verarbeiten, BEVOR Widgets erstellt werden
+    # Dies stellt sicher, dass GPS-Daten übernommen werden, unabhängig vom Radio-Button-Status
+    query_params = st.query_params
+    if 'gps_lat' in query_params and 'gps_lng' in query_params:
+        try:
+            lat_param = float(query_params.get('gps_lat'))
+            lng_param = float(query_params.get('gps_lng'))
+
+            # Adressdaten aus Query-Params
+            strasse = query_params.get('str', '')
+            hausnummer = query_params.get('nr', '')
+            plz = query_params.get('plz', '')
+            ort = query_params.get('ort', '')
+            land = query_params.get('land', 'Deutschland') or 'Deutschland'
+
+            # Koordinaten speichern
+            gps_koordinaten = f"{lat_param}, {lng_param}"
+            st.session_state.unfallaufnahme['gps_koordinaten'] = gps_koordinaten
+
+            # Adressfelder in Session State setzen (BEVOR Widgets erstellt werden!)
+            st.session_state['addr_strasse'] = strasse
+            st.session_state['addr_hausnummer'] = hausnummer
+            st.session_state['addr_plz'] = plz
+            st.session_state['addr_ort'] = ort
+            st.session_state['addr_land'] = land
+
+            # Auch in ort_details speichern
+            st.session_state.unfallaufnahme['ort_details'] = {
+                'strasse': strasse,
+                'hausnummer': hausnummer,
+                'plz': plz,
+                'ort': ort,
+                'land': land
+            }
+            st.session_state.unfallaufnahme['letzte_aufgeloeste_coords'] = gps_koordinaten
+            st.session_state.unfallaufnahme['adresse_ermittelt'] = True
+
+            # Query-Parameter entfernen und neu laden
+            st.query_params.clear()
+            st.rerun()
+        except (ValueError, TypeError):
+            st.query_params.clear()
+
     st.markdown("""
     <div class="step-header">
         <span class="step-number">1</span>
@@ -575,49 +618,8 @@ def _render_schritt_wann_wo():
     )
 
     if ort_methode == "Aktuellen Standort verwenden (GPS)":
-        # Prüfe ob GPS-Daten via Query-Parameter übergeben wurden (vom Link-Klick)
-        query_params = st.query_params
-        if 'gps_lat' in query_params and 'gps_lng' in query_params:
-            try:
-                lat_param = float(query_params.get('gps_lat'))
-                lng_param = float(query_params.get('gps_lng'))
-
-                # Adressdaten aus Query-Params
-                strasse = query_params.get('str', '')
-                hausnummer = query_params.get('nr', '')
-                plz = query_params.get('plz', '')
-                ort = query_params.get('ort', '')
-                land = query_params.get('land', 'Deutschland') or 'Deutschland'
-
-                # Koordinaten speichern
-                gps_koordinaten = f"{lat_param}, {lng_param}"
-                st.session_state.unfallaufnahme['gps_koordinaten'] = gps_koordinaten
-
-                # Adressfelder setzen
-                st.session_state['addr_strasse'] = strasse
-                st.session_state['addr_hausnummer'] = hausnummer
-                st.session_state['addr_plz'] = plz
-                st.session_state['addr_ort'] = ort
-                st.session_state['addr_land'] = land
-
-                # Auch in ort_details speichern
-                st.session_state.unfallaufnahme['ort_details'] = {
-                    'strasse': strasse,
-                    'hausnummer': hausnummer,
-                    'plz': plz,
-                    'ort': ort,
-                    'land': land
-                }
-                st.session_state.unfallaufnahme['letzte_aufgeloeste_coords'] = gps_koordinaten
-                st.session_state.unfallaufnahme['adresse_ermittelt'] = True
-
-                # Query-Parameter entfernen und neu laden
-                st.query_params.clear()
-                st.rerun()
-            except (ValueError, TypeError):
-                st.query_params.clear()
-
         # JavaScript für GPS-Erfassung - mit klickbarem Link statt Copy/Paste
+        # (Query-Parameter werden jetzt am Anfang der Funktion verarbeitet)
         gps_html = """
         <div id="gps-container" style="margin: 10px 0;">
             <button id="gps-btn" onclick="getLocationAndAddress()" style="
