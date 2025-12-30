@@ -229,7 +229,7 @@ def _render_dokumente(db: Session, projekt: UnfallProjekt):
     dokumente = db.query(Dokument).filter(
         Dokument.unfallprojekt_id == projekt.id,
         Dokument.freigabe_erteilt == True  # Nur freigegebene Dokumente
-    ).order_by(Dokument.hochgeladen_am.desc()).all()
+    ).order_by(Dokument.erstellt_am.desc()).all()
 
     if not dokumente:
         st.info("Es wurden noch keine Dokumente für Sie freigegeben.")
@@ -250,7 +250,7 @@ def _render_dokumente(db: Session, projekt: UnfallProjekt):
 
                 with col1:
                     st.markdown(f"**{dok.original_dateiname}**")
-                    st.caption(f"Hochgeladen: {dok.hochgeladen_am.strftime('%d.%m.%Y')}")
+                    st.caption(f"Hochgeladen: {dok.erstellt_am.strftime('%d.%m.%Y') if dok.erstellt_am else 'Unbekannt'}")
 
                 with col2:
                     if dok.dateipfad:
