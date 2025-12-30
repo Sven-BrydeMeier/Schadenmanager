@@ -575,52 +575,34 @@ def _render_schritt_wann_wo():
     )
 
     if ort_methode == "Aktuellen Standort verwenden (GPS)":
-        st.markdown("""
-        <div class="info-box">
-            <strong>📍 Standorterfassung</strong><br>
-            Klicken Sie auf den Button und erlauben Sie den Standortzugriff in Ihrem Browser.
-            Die Adresse wird automatisch ermittelt.
-        </div>
-        """, unsafe_allow_html=True)
-
-        # Prüfe ob GPS-Koordinaten via Query-Parameter übergeben wurden
-        query_params = st.query_params
-        if 'gps_lat' in query_params and 'gps_lng' in query_params:
-            try:
-                lat_param = float(query_params['gps_lat'])
-                lng_param = float(query_params['gps_lng'])
-                coords_from_url = f"{lat_param}, {lng_param}"
-                # In Session State speichern
-                st.session_state.unfallaufnahme['gps_koordinaten'] = coords_from_url
-                # Query-Parameter entfernen
-                st.query_params.clear()
-                st.rerun()
-            except (ValueError, TypeError):
-                pass
-
-        # JavaScript für GPS-Erfassung mit URL-Redirect
+        # JavaScript für GPS-Erfassung mit Auto-Copy
         gps_html = """
         <div id="gps-container" style="margin: 10px 0;">
             <button id="gps-btn" onclick="getLocation()" style="
                 background-color: #667eea;
                 color: white;
                 border: none;
-                padding: 12px 24px;
+                padding: 15px 24px;
                 border-radius: 8px;
                 cursor: pointer;
-                font-size: 16px;
+                font-size: 18px;
                 width: 100%;
+                font-weight: bold;
             ">
                 📍 Meinen Standort erfassen
             </button>
-            <div id="gps-result" style="margin-top: 10px; padding: 15px; background: #d1fae5; border-radius: 8px; display: none;">
-                <strong style="color: #065f46;">✓ Standort erfasst!</strong><br><br>
-                <div style="background: white; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 16px; text-align: center;">
-                    <span id="gps-coords" style="font-weight: bold;"></span>
+            <div id="gps-result" style="margin-top: 15px; padding: 20px; background: #d1fae5; border-radius: 8px; display: none; border: 2px solid #059669;">
+                <div style="text-align: center; margin-bottom: 15px;">
+                    <span style="font-size: 40px;">✅</span>
+                    <h3 style="color: #065f46; margin: 10px 0 5px 0;">Standort erfasst & kopiert!</h3>
+                    <p style="color: #065f46; margin: 0;">Bitte unten in das Feld einfügen (Strg+V / Cmd+V)</p>
                 </div>
-                <div style="margin-top: 10px;">
-                    <button id="apply-btn" onclick="applyCoords()" style="
-                        width: 100%;
+                <div style="background: white; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 20px; text-align: center; border: 2px dashed #059669;">
+                    <span id="gps-coords" style="font-weight: bold; color: #065f46;"></span>
+                </div>
+                <div style="margin-top: 15px; display: flex; gap: 10px;">
+                    <button id="copy-btn" onclick="copyCoords()" style="
+                        flex: 1;
                         background-color: #059669;
                         color: white;
                         border: none;
@@ -629,30 +611,20 @@ def _render_schritt_wann_wo():
                         cursor: pointer;
                         font-size: 16px;
                         font-weight: bold;
-                    ">✓ Koordinaten übernehmen</button>
-                </div>
-                <div style="margin-top: 10px; display: flex; gap: 10px;">
-                    <button id="copy-btn" onclick="copyCoords()" style="
-                        flex: 1;
-                        background-color: #667eea;
-                        color: white;
-                        border: none;
-                        padding: 10px;
-                        border-radius: 5px;
-                        cursor: pointer;
-                    ">📋 Kopieren</button>
+                    ">📋 Nochmal kopieren</button>
                     <a id="gps-maps-link" href="#" target="_blank" style="
                         flex: 1;
                         background-color: #f3f4f6;
                         color: #374151;
                         text-decoration: none;
-                        padding: 10px;
+                        padding: 12px;
                         border-radius: 5px;
                         text-align: center;
-                    ">🗺️ Maps</a>
+                        font-weight: bold;
+                    ">🗺️ In Maps prüfen</a>
                 </div>
             </div>
-            <div id="gps-error" style="margin-top: 10px; padding: 10px; background: #fef2f2; border-radius: 8px; color: #dc2626; display: none;"></div>
+            <div id="gps-error" style="margin-top: 10px; padding: 15px; background: #fef2f2; border-radius: 8px; color: #dc2626; display: none;"></div>
         </div>
         <script>
         var capturedLat = null;
@@ -679,13 +651,18 @@ def _render_schritt_wann_wo():
                         coords.innerHTML = coordStr;
                         mapsLink.href = 'https://www.google.com/maps?q=' + capturedLat + ',' + capturedLng;
                         result.style.display = 'block';
-                        btn.innerHTML = '✓ Standort erfasst';
+                        btn.innerHTML = '✓ Standort erfasst - Koordinaten kopiert!';
                         btn.style.backgroundColor = '#059669';
 
-                        // In localStorage speichern
+                        // Automatisch in Zwischenablage kopieren
+                        navigator.clipboard.writeText(coordStr).then(function() {
+                            console.log('Koordinaten automatisch kopiert');
+                        }).catch(function(err) {
+                            console.log('Auto-copy fehlgeschlagen:', err);
+                        });
+
+                        // In localStorage speichern als Backup
                         localStorage.setItem('unfallort_gps', coordStr);
-                        localStorage.setItem('unfallort_lat', capturedLat);
-                        localStorage.setItem('unfallort_lng', capturedLng);
                     },
                     function(err) {
                         error.innerHTML = '<strong>Fehler:</strong> ' + err.message + '<br><br>Mögliche Lösungen:<br>• Standortzugriff im Browser erlauben<br>• GPS aktivieren (bei Mobilgeräten)<br>• Koordinaten manuell eingeben';
@@ -704,38 +681,34 @@ def _render_schritt_wann_wo():
             }
         }
 
-        function applyCoords() {
-            if (capturedLat && capturedLng) {
-                // URL mit Query-Parametern neu laden
-                var currentUrl = window.top.location.href.split('?')[0];
-                var newUrl = currentUrl + '?gps_lat=' + capturedLat + '&gps_lng=' + capturedLng;
-                window.top.location.href = newUrl;
-            }
-        }
-
         function copyCoords() {
             var coordStr = capturedLat + ', ' + capturedLng;
             navigator.clipboard.writeText(coordStr).then(function() {
                 var copyBtn = document.getElementById('copy-btn');
-                copyBtn.innerHTML = '✓ Kopiert!';
-                copyBtn.style.backgroundColor = '#059669';
+                copyBtn.innerHTML = '✅ Kopiert!';
                 setTimeout(function() {
-                    copyBtn.innerHTML = '📋 Kopieren';
-                    copyBtn.style.backgroundColor = '#667eea';
+                    copyBtn.innerHTML = '📋 Nochmal kopieren';
                 }, 2000);
             });
         }
         </script>
         """
-        components.html(gps_html, height=250)
+        components.html(gps_html, height=280)
 
-        # Koordinaten-Eingabefeld
+        # Auffälliges Eingabefeld mit Anleitung
+        st.markdown("""
+        <div style="background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; padding: 10px; margin: 10px 0;">
+            <strong>👇 Hier die kopierten Koordinaten einfügen (Strg+V / Cmd+V):</strong>
+        </div>
+        """, unsafe_allow_html=True)
+
         gps_koordinaten = st.text_input(
             "GPS-Koordinaten",
             value=st.session_state.unfallaufnahme.get('gps_koordinaten', ''),
-            placeholder="52.520008, 13.404954 (oder klicken Sie oben auf 'Koordinaten übernehmen')",
+            placeholder="Koordinaten hier einfügen...",
             help="Format: Breitengrad, Längengrad (z.B. 52.520008, 13.404954)",
-            key="gps_input"
+            key="gps_input",
+            label_visibility="collapsed"
         )
 
         # Speichere aktuelle Koordinaten
