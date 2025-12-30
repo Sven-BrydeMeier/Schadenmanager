@@ -725,10 +725,34 @@ def _render_schritt_wann_wo():
                     .then(function(data) {
                         var addr = data.address || {};
 
-                        var strasse = addr.road || addr.pedestrian || addr.street || '';
-                        var hausnummer = addr.house_number || '';
+                        // Debug: Zeige alle Adressfelder in der Konsole
+                        console.log('Nominatim Antwort:', addr);
+
+                        var strasse = addr.road || addr.pedestrian || addr.street || addr.path || addr.footway || '';
+                        // Hausnummer: Verschiedene mögliche Feldnamen prüfen
+                        var hausnummer = addr.house_number || addr.housenumber || addr.street_number || '';
+
+                        // Wenn keine Hausnummer gefunden, aber display_name enthält eine Nummer nach der Straße
+                        if (!hausnummer && data.display_name && strasse) {
+                            // Versuche Hausnummer aus display_name zu extrahieren (z.B. "Hauptstraße 42, ...")
+                            var displayParts = data.display_name.split(',');
+                            if (displayParts.length > 0) {
+                                var firstPart = displayParts[0].trim();
+                                // Prüfe ob die erste Komponente "Straße Nummer" enthält
+                                var match = firstPart.match(/^(.+?)\\s+(\\d+[a-zA-Z]?)$/);
+                                if (match && match[1].toLowerCase().includes(strasse.toLowerCase().substring(0, 5))) {
+                                    hausnummer = match[2];
+                                }
+                                // Alternativ: Nur Nummer am Ende
+                                var numMatch = firstPart.match(/\\s(\\d+[a-zA-Z]?)$/);
+                                if (!hausnummer && numMatch) {
+                                    hausnummer = numMatch[1];
+                                }
+                            }
+                        }
+
                         var plz = addr.postcode || '';
-                        var ort = addr.city || addr.town || addr.village || addr.municipality || '';
+                        var ort = addr.city || addr.town || addr.village || addr.municipality || addr.county || '';
                         var land = addr.country || 'Deutschland';
 
                         // UI aktualisieren
