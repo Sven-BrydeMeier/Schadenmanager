@@ -575,7 +575,49 @@ def _render_schritt_wann_wo():
     )
 
     if ort_methode == "Aktuellen Standort verwenden (GPS)":
-        # JavaScript für GPS-Erfassung MIT automatischer Adressermittlung
+        # Prüfe ob GPS-Daten via Query-Parameter übergeben wurden (vom Link-Klick)
+        query_params = st.query_params
+        if 'gps_lat' in query_params and 'gps_lng' in query_params:
+            try:
+                lat_param = float(query_params.get('gps_lat'))
+                lng_param = float(query_params.get('gps_lng'))
+
+                # Adressdaten aus Query-Params
+                strasse = query_params.get('str', '')
+                hausnummer = query_params.get('nr', '')
+                plz = query_params.get('plz', '')
+                ort = query_params.get('ort', '')
+                land = query_params.get('land', 'Deutschland') or 'Deutschland'
+
+                # Koordinaten speichern
+                gps_koordinaten = f"{lat_param}, {lng_param}"
+                st.session_state.unfallaufnahme['gps_koordinaten'] = gps_koordinaten
+
+                # Adressfelder setzen
+                st.session_state['addr_strasse'] = strasse
+                st.session_state['addr_hausnummer'] = hausnummer
+                st.session_state['addr_plz'] = plz
+                st.session_state['addr_ort'] = ort
+                st.session_state['addr_land'] = land
+
+                # Auch in ort_details speichern
+                st.session_state.unfallaufnahme['ort_details'] = {
+                    'strasse': strasse,
+                    'hausnummer': hausnummer,
+                    'plz': plz,
+                    'ort': ort,
+                    'land': land
+                }
+                st.session_state.unfallaufnahme['letzte_aufgeloeste_coords'] = gps_koordinaten
+                st.session_state.unfallaufnahme['adresse_ermittelt'] = True
+
+                # Query-Parameter entfernen und neu laden
+                st.query_params.clear()
+                st.rerun()
+            except (ValueError, TypeError):
+                st.query_params.clear()
+
+        # JavaScript für GPS-Erfassung - mit klickbarem Link statt Copy/Paste
         gps_html = """
         <div id="gps-container" style="margin: 10px 0;">
             <button id="gps-btn" onclick="getLocationAndAddress()" style="
@@ -602,7 +644,6 @@ def _render_schritt_wann_wo():
                 <div style="text-align: center; margin-bottom: 15px;">
                     <span style="font-size: 50px;">✅</span>
                     <h3 style="color: #065f46; margin: 10px 0 5px 0;">Standort & Adresse erfasst!</h3>
-                    <p style="color: #065f46; margin: 0; font-weight: bold;">Daten wurden in die Zwischenablage kopiert</p>
                 </div>
 
                 <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0; border: 1px solid #059669;">
@@ -616,41 +657,40 @@ def _render_schritt_wann_wo():
                     <div id="result-city" style="font-size: 16px; color: #065f46;"></div>
                 </div>
 
-                <div style="margin-top: 15px; text-align: center; padding: 15px; background: #fef3c7; border-radius: 8px; border: 2px solid #f59e0b;">
-                    <strong style="color: #92400e;">👇 Jetzt unten einfügen (Strg+V / Cmd+V)</strong>
-                </div>
+                <!-- Echter Link mit target="_top" - funktioniert im iframe! -->
+                <a id="apply-link" href="#" target="_top" style="
+                    display: block;
+                    margin-top: 20px;
+                    padding: 18px;
+                    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+                    color: white;
+                    text-decoration: none;
+                    text-align: center;
+                    border-radius: 10px;
+                    font-size: 18px;
+                    font-weight: bold;
+                    box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+                ">
+                    ✓ Daten übernehmen
+                </a>
 
-                <div style="margin-top: 15px; display: flex; gap: 10px;">
-                    <button onclick="copyAllData()" style="
-                        flex: 1;
-                        background-color: #059669;
-                        color: white;
-                        border: none;
-                        padding: 12px;
-                        border-radius: 5px;
-                        cursor: pointer;
-                        font-size: 14px;
-                        font-weight: bold;
-                    ">📋 Nochmal kopieren</button>
-                    <a id="gps-maps-link" href="#" target="_blank" style="
-                        flex: 1;
-                        background-color: #f3f4f6;
-                        color: #374151;
-                        text-decoration: none;
-                        padding: 12px;
-                        border-radius: 5px;
-                        text-align: center;
-                        font-weight: bold;
-                    ">🗺️ Maps</a>
-                </div>
+                <a id="gps-maps-link" href="#" target="_blank" style="
+                    display: block;
+                    margin-top: 10px;
+                    padding: 12px;
+                    background-color: #f3f4f6;
+                    color: #374151;
+                    text-decoration: none;
+                    text-align: center;
+                    border-radius: 8px;
+                    font-weight: bold;
+                ">🗺️ In Google Maps prüfen</a>
             </div>
 
             <div id="gps-error" style="margin-top: 15px; padding: 15px; background: #fef2f2; border-radius: 8px; color: #dc2626; display: none;"></div>
         </div>
 
         <script>
-        var allData = '';
-
         function getLocationAndAddress() {
             var btn = document.getElementById('gps-btn');
             var loading = document.getElementById('gps-loading');
@@ -689,39 +729,41 @@ def _render_schritt_wann_wo():
                         var ort = addr.city || addr.town || addr.village || addr.municipality || '';
                         var land = addr.country || 'Deutschland';
 
-                        // Daten-String erstellen (Format: GPS|STR|NR|PLZ|ORT|LAND)
-                        allData = 'GPS:' + lat + ',' + lng + '|STR:' + strasse + '|NR:' + hausnummer + '|PLZ:' + plz + '|ORT:' + ort + '|LAND:' + land;
-
                         // UI aktualisieren
                         document.getElementById('result-coords').innerHTML = lat + ', ' + lng;
                         document.getElementById('result-street').innerHTML = strasse + (hausnummer ? ' ' + hausnummer : '');
                         document.getElementById('result-city').innerHTML = plz + ' ' + ort;
                         document.getElementById('gps-maps-link').href = 'https://www.google.com/maps?q=' + lat + ',' + lng;
 
-                        // In Zwischenablage kopieren
-                        navigator.clipboard.writeText(allData).then(function() {
-                            loading.style.display = 'none';
-                            result.style.display = 'block';
-                        }).catch(function() {
-                            loading.style.display = 'none';
-                            result.style.display = 'block';
-                        });
+                        // Link mit Query-Parametern erstellen
+                        var baseUrl = window.top.location.href.split('?')[0];
+                        var params = '?gps_lat=' + lat + '&gps_lng=' + lng;
+                        params += '&str=' + encodeURIComponent(strasse);
+                        params += '&nr=' + encodeURIComponent(hausnummer);
+                        params += '&plz=' + encodeURIComponent(plz);
+                        params += '&ort=' + encodeURIComponent(ort);
+                        params += '&land=' + encodeURIComponent(land);
+                        document.getElementById('apply-link').href = baseUrl + params;
+
+                        loading.style.display = 'none';
+                        result.style.display = 'block';
                     })
                     .catch(function(err) {
-                        // Fallback: Nur Koordinaten verwenden
-                        allData = 'GPS:' + lat + ',' + lng + '|STR:|NR:|PLZ:|ORT:|LAND:Deutschland';
+                        // Fallback: Nur Koordinaten
                         document.getElementById('result-coords').innerHTML = lat + ', ' + lng;
-                        document.getElementById('result-street').innerHTML = '(Adresse konnte nicht ermittelt werden)';
-                        document.getElementById('result-city').innerHTML = 'Bitte manuell eingeben';
+                        document.getElementById('result-street').innerHTML = '(Adresse nicht ermittelt)';
+                        document.getElementById('result-city').innerHTML = '';
                         document.getElementById('gps-maps-link').href = 'https://www.google.com/maps?q=' + lat + ',' + lng;
 
-                        navigator.clipboard.writeText(allData);
+                        var baseUrl = window.top.location.href.split('?')[0];
+                        document.getElementById('apply-link').href = baseUrl + '?gps_lat=' + lat + '&gps_lng=' + lng + '&land=Deutschland';
+
                         loading.style.display = 'none';
                         result.style.display = 'block';
                     });
                 },
                 function(err) {
-                    showError('<strong>GPS-Fehler:</strong> ' + err.message + '<br><br>• Standortzugriff im Browser erlauben<br>• GPS aktivieren (bei Mobilgeräten)');
+                    showError('<strong>GPS-Fehler:</strong> ' + err.message + '<br><br>• Standortzugriff im Browser erlauben<br>• GPS aktivieren');
                 },
                 { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
             );
@@ -733,91 +775,16 @@ def _render_schritt_wann_wo():
             document.getElementById('gps-error').innerHTML = msg;
             document.getElementById('gps-error').style.display = 'block';
         }
-
-        function copyAllData() {
-            navigator.clipboard.writeText(allData).then(function() {
-                alert('Daten kopiert! Jetzt unten einfügen.');
-            });
-        }
         </script>
         """
         components.html(gps_html, height=420)
 
-        # Eingabefeld für die kopierten Daten
-        st.markdown("""
-        <div style="background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; padding: 12px; margin: 10px 0;">
-            <strong>👇 Hier die kopierten Daten einfügen (Strg+V / Cmd+V):</strong>
-        </div>
-        """, unsafe_allow_html=True)
-
-        gps_daten_input = st.text_input(
-            "GPS-Daten",
-            placeholder="Daten hier einfügen...",
-            key="gps_data_input",
-            label_visibility="collapsed"
-        )
-
-        # Parse die eingefügten Daten
-        if gps_daten_input and gps_daten_input.startswith("GPS:"):
-            try:
-                # Format: GPS:lat,lng|STR:street|NR:nr|PLZ:plz|ORT:city|LAND:country
-                parts = gps_daten_input.split("|")
-                parsed = {}
-                for part in parts:
-                    if ":" in part:
-                        key, value = part.split(":", 1)
-                        parsed[key] = value
-
-                # GPS-Koordinaten extrahieren
-                gps_coords = parsed.get("GPS", "")
-                if "," in gps_coords:
-                    lat_str, lng_str = gps_coords.split(",")
-                    lat = float(lat_str)
-                    lng = float(lng_str)
-
-                    # Koordinaten speichern
-                    gps_koordinaten = f"{lat}, {lng}"
-                    st.session_state.unfallaufnahme['gps_koordinaten'] = gps_koordinaten
-
-                    # Adresse extrahieren und in Session State setzen
-                    strasse = parsed.get("STR", "")
-                    hausnummer = parsed.get("NR", "")
-                    plz = parsed.get("PLZ", "")
-                    ort = parsed.get("ORT", "")
-                    land = parsed.get("LAND", "Deutschland") or "Deutschland"
-
-                    # In Session State für Widgets setzen
-                    st.session_state['addr_strasse'] = strasse
-                    st.session_state['addr_hausnummer'] = hausnummer
-                    st.session_state['addr_plz'] = plz
-                    st.session_state['addr_ort'] = ort
-                    st.session_state['addr_land'] = land
-
-                    # Auch in ort_details speichern
-                    st.session_state.unfallaufnahme['ort_details'] = {
-                        'strasse': strasse,
-                        'hausnummer': hausnummer,
-                        'plz': plz,
-                        'ort': ort,
-                        'land': land
-                    }
-                    st.session_state.unfallaufnahme['letzte_aufgeloeste_coords'] = gps_koordinaten
-                    st.session_state.unfallaufnahme['adresse_ermittelt'] = True
-
-                    # Eingabefeld leeren um erneutes Parsen zu verhindern
-                    del st.session_state['gps_data_input']
-
-                    st.rerun()
-
-            except Exception as e:
-                st.error(f"Fehler beim Parsen der Daten: {e}")
-
         # Zeige aktuelle Koordinaten falls vorhanden
         gps_koordinaten = st.session_state.unfallaufnahme.get('gps_koordinaten', '')
         if gps_koordinaten:
-            st.success(f"✓ Koordinaten: {gps_koordinaten}")
+            st.success(f"✅ Koordinaten & Adresse übernommen!")
             coords_clean = gps_koordinaten.replace(" ", "")
-            st.markdown(f"[📍 In Google Maps anzeigen](https://www.google.com/maps?q={coords_clean})")
+            st.markdown(f"📍 Koordinaten: `{gps_koordinaten}` ([Maps]({f'https://www.google.com/maps?q={coords_clean}'}))")
 
     # Manuelle Adresseingabe (immer anzeigen)
     st.markdown("#### Adresse")
