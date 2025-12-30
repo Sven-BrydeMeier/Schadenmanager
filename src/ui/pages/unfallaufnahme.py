@@ -210,9 +210,6 @@ def _reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
     Returns:
         Dictionary mit Adressdaten oder None bei Fehler
     """
-    # Debug-Ausgabe
-    st.write(f"🔍 Debug: Suche Adresse für Koordinaten {lat}, {lng}")
-
     # Versuch 1: OpenStreetMap Nominatim API
     try:
         url = "https://nominatim.openstreetmap.org/reverse"
@@ -230,19 +227,10 @@ def _reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
             "User-Agent": "Schadenmanager-Unfallaufnahme/1.0 (https://github.com/schadenmanager)"
         }
 
-        st.write("🌐 Debug: Rufe Nominatim API auf...")
-
         response = requests.get(url, params=params, headers=headers, timeout=10)
-
-        st.write(f"📡 Debug: HTTP Status: {response.status_code}")
 
         if response.status_code == 200:
             data = response.json()
-
-            # Debug: Zeige rohe Antwort
-            with st.expander("🔧 Debug: Rohe API-Antwort"):
-                st.json(data)
-
             address = data.get("address", {})
 
             # Straße ermitteln (verschiedene Felder prüfen)
@@ -278,7 +266,7 @@ def _reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
             land = address.get("country", "")
             land_code = address.get("country_code", "").upper()
 
-            result = {
+            return {
                 "strasse": strasse,
                 "hausnummer": hausnummer,
                 "plz": plz,
@@ -290,27 +278,14 @@ def _reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
                 "raw": address
             }
 
-            st.write(f"✅ Debug: Gefunden - Straße: '{strasse}', PLZ: '{plz}', Ort: '{ort}'")
-
-            return result
-        else:
-            st.error(f"❌ Nominatim API Fehler: HTTP {response.status_code}")
-            st.write(f"Response: {response.text[:500]}")
-
     except requests.exceptions.Timeout:
-        st.error("❌ Nominatim: Timeout (10s) - Server antwortet nicht")
-    except requests.exceptions.ConnectionError as e:
-        st.error(f"❌ Nominatim: Keine Verbindung - {str(e)[:100]}")
-    except requests.exceptions.RequestException as e:
-        st.error(f"❌ Nominatim Fehler: {str(e)[:100]}")
-    except json.JSONDecodeError as e:
-        st.error(f"❌ Nominatim: Ungültige JSON-Antwort - {str(e)}")
-    except Exception as e:
-        st.error(f"❌ Unerwarteter Fehler bei Nominatim: {type(e).__name__}: {str(e)}")
+        pass  # Fallback to Photon
+    except requests.exceptions.RequestException:
+        pass  # Fallback to Photon
+    except Exception:
+        pass  # Fallback to Photon
 
     # Versuch 2: Photon API (Komoot) als Fallback
-    st.write("🔄 Debug: Versuche Photon API als Fallback...")
-
     try:
         url = "https://photon.komoot.io/reverse"
         params = {
@@ -324,14 +299,8 @@ def _reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
 
         response = requests.get(url, params=params, headers=headers, timeout=10)
 
-        st.write(f"📡 Debug: Photon HTTP Status: {response.status_code}")
-
         if response.status_code == 200:
             data = response.json()
-
-            # Debug: Zeige rohe Antwort
-            with st.expander("🔧 Debug: Photon API-Antwort"):
-                st.json(data)
 
             if data.get("features") and len(data["features"]) > 0:
                 props = data["features"][0].get("properties", {})
@@ -355,7 +324,7 @@ def _reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
                 if ort:
                     display_parts.append(ort)
 
-                result = {
+                return {
                     "strasse": strasse,
                     "hausnummer": props.get("housenumber", ""),
                     "plz": props.get("postcode", ""),
@@ -367,16 +336,9 @@ def _reverse_geocode(lat: float, lng: float) -> Optional[Dict]:
                     "raw": props
                 }
 
-                st.write(f"✅ Debug (Photon): Gefunden - Straße: '{strasse}', PLZ: '{props.get('postcode', '')}', Ort: '{ort}'")
+    except Exception:
+        pass
 
-                return result
-            else:
-                st.warning("⚠️ Photon API: Keine Ergebnisse gefunden")
-
-    except Exception as e:
-        st.error(f"❌ Photon API Fehler: {type(e).__name__}: {str(e)}")
-
-    st.error("❌ Beide Geocoding-APIs sind fehlgeschlagen. Bitte Adresse manuell eingeben.")
     return None
 
 
@@ -621,7 +583,22 @@ def _render_schritt_wann_wo():
         </div>
         """, unsafe_allow_html=True)
 
-        # JavaScript für GPS-Erfassung
+        # Prüfe ob GPS-Koordinaten via Query-Parameter übergeben wurden
+        query_params = st.query_params
+        if 'gps_lat' in query_params and 'gps_lng' in query_params:
+            try:
+                lat_param = float(query_params['gps_lat'])
+                lng_param = float(query_params['gps_lng'])
+                coords_from_url = f"{lat_param}, {lng_param}"
+                # In Session State speichern
+                st.session_state.unfallaufnahme['gps_koordinaten'] = coords_from_url
+                # Query-Parameter entfernen
+                st.query_params.clear()
+                st.rerun()
+            except (ValueError, TypeError):
+                pass
+
+        # JavaScript für GPS-Erfassung mit URL-Redirect
         gps_html = """
         <div id="gps-container" style="margin: 10px 0;">
             <button id="gps-btn" onclick="getLocation()" style="
@@ -641,6 +618,19 @@ def _render_schritt_wann_wo():
                 <div style="background: white; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 16px; text-align: center;">
                     <span id="gps-coords" style="font-weight: bold;"></span>
                 </div>
+                <div style="margin-top: 10px;">
+                    <button id="apply-btn" onclick="applyCoords()" style="
+                        width: 100%;
+                        background-color: #059669;
+                        color: white;
+                        border: none;
+                        padding: 12px;
+                        border-radius: 5px;
+                        cursor: pointer;
+                        font-size: 16px;
+                        font-weight: bold;
+                    ">✓ Koordinaten übernehmen</button>
+                </div>
                 <div style="margin-top: 10px; display: flex; gap: 10px;">
                     <button id="copy-btn" onclick="copyCoords()" style="
                         flex: 1;
@@ -650,7 +640,7 @@ def _render_schritt_wann_wo():
                         padding: 10px;
                         border-radius: 5px;
                         cursor: pointer;
-                    ">📋 Koordinaten kopieren</button>
+                    ">📋 Kopieren</button>
                     <a id="gps-maps-link" href="#" target="_blank" style="
                         flex: 1;
                         background-color: #f3f4f6;
@@ -661,9 +651,6 @@ def _render_schritt_wann_wo():
                         text-align: center;
                     ">🗺️ Maps</a>
                 </div>
-                <p style="margin-top: 10px; font-size: 12px; color: #065f46;">
-                    👆 Bitte kopieren Sie die Koordinaten und fügen Sie sie unten in das Feld ein.
-                </p>
             </div>
             <div id="gps-error" style="margin-top: 10px; padding: 10px; background: #fef2f2; border-radius: 8px; color: #dc2626; display: none;"></div>
         </div>
@@ -697,9 +684,8 @@ def _render_schritt_wann_wo():
 
                         // In localStorage speichern
                         localStorage.setItem('unfallort_gps', coordStr);
-
-                        // Versuche Streamlit-Input zu finden und zu befüllen
-                        trySetStreamlitInput(coordStr);
+                        localStorage.setItem('unfallort_lat', capturedLat);
+                        localStorage.setItem('unfallort_lng', capturedLng);
                     },
                     function(err) {
                         error.innerHTML = '<strong>Fehler:</strong> ' + err.message + '<br><br>Mögliche Lösungen:<br>• Standortzugriff im Browser erlauben<br>• GPS aktivieren (bei Mobilgeräten)<br>• Koordinaten manuell eingeben';
@@ -718,6 +704,15 @@ def _render_schritt_wann_wo():
             }
         }
 
+        function applyCoords() {
+            if (capturedLat && capturedLng) {
+                // URL mit Query-Parametern neu laden
+                var currentUrl = window.top.location.href.split('?')[0];
+                var newUrl = currentUrl + '?gps_lat=' + capturedLat + '&gps_lng=' + capturedLng;
+                window.top.location.href = newUrl;
+            }
+        }
+
         function copyCoords() {
             var coordStr = capturedLat + ', ' + capturedLng;
             navigator.clipboard.writeText(coordStr).then(function() {
@@ -725,55 +720,23 @@ def _render_schritt_wann_wo():
                 copyBtn.innerHTML = '✓ Kopiert!';
                 copyBtn.style.backgroundColor = '#059669';
                 setTimeout(function() {
-                    copyBtn.innerHTML = '📋 Koordinaten kopieren';
+                    copyBtn.innerHTML = '📋 Kopieren';
                     copyBtn.style.backgroundColor = '#667eea';
                 }, 2000);
             });
         }
-
-        function trySetStreamlitInput(coordStr) {
-            // Mehrere Versuche mit Verzögerung
-            var attempts = [100, 300, 500, 1000];
-            attempts.forEach(function(delay) {
-                setTimeout(function() {
-                    try {
-                        // Versuche über parent document
-                        var inputs = parent.document.querySelectorAll('input[type="text"]');
-                        inputs.forEach(function(input) {
-                            // Suche nach dem GPS-Koordinaten-Feld anhand des Placeholders
-                            if (input.placeholder && (input.placeholder.includes('52.520') || input.placeholder.includes('13.404'))) {
-                                // Setze den Wert
-                                var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                                nativeInputValueSetter.call(input, coordStr);
-
-                                // Trigger React/Streamlit events
-                                input.dispatchEvent(new Event('input', { bubbles: true }));
-                                input.dispatchEvent(new Event('change', { bubbles: true }));
-                            }
-                        });
-                    } catch(e) {
-                        console.log('Could not set Streamlit input:', e);
-                    }
-                }, delay);
-            });
-        }
         </script>
         """
-        components.html(gps_html, height=220)
+        components.html(gps_html, height=250)
 
-        # Koordinaten-Eingabefeld (wird vom JavaScript befüllt)
+        # Koordinaten-Eingabefeld
         gps_koordinaten = st.text_input(
             "GPS-Koordinaten",
             value=st.session_state.unfallaufnahme.get('gps_koordinaten', ''),
-            placeholder="52.520008, 13.404954",
+            placeholder="52.520008, 13.404954 (oder klicken Sie oben auf 'Koordinaten übernehmen')",
             help="Format: Breitengrad, Längengrad (z.B. 52.520008, 13.404954)",
             key="gps_input"
         )
-
-        # DEBUG: Zeige was im Feld steht
-        st.write(f"🔧 DEBUG: gps_koordinaten = '{gps_koordinaten}'")
-        st.write(f"🔧 DEBUG: Typ = {type(gps_koordinaten)}")
-        st.write(f"🔧 DEBUG: Länge = {len(gps_koordinaten) if gps_koordinaten else 0}")
 
         # Speichere aktuelle Koordinaten
         st.session_state.unfallaufnahme['gps_koordinaten'] = gps_koordinaten
@@ -790,22 +753,13 @@ def _render_schritt_wann_wo():
             lng = None
             try:
                 parts = gps_koordinaten.replace(" ", "").split(",")
-                st.write(f"🔧 DEBUG: parts = {parts}")
                 if len(parts) == 2:
                     lat = float(parts[0])
                     lng = float(parts[1])
-                    st.write(f"🔧 DEBUG: lat = {lat}, lng = {lng}")
                     if -90 <= lat <= 90 and -180 <= lng <= 180:
                         koordinaten_gueltig = True
-                        st.write("🔧 DEBUG: Koordinaten sind gültig!")
-                    else:
-                        st.write("🔧 DEBUG: Koordinaten außerhalb gültiger Bereiche")
-                else:
-                    st.write(f"🔧 DEBUG: Nicht 2 Teile, sondern {len(parts)}")
-            except ValueError as e:
-                st.write(f"🔧 DEBUG: ValueError: {e}")
-
-            st.write(f"🔧 DEBUG: koordinaten_gueltig = {koordinaten_gueltig}")
+            except ValueError:
+                pass
 
             if not koordinaten_gueltig:
                 st.warning("⚠️ Ungültiges Koordinatenformat. Bitte prüfen Sie die Eingabe.")
@@ -818,30 +772,17 @@ def _render_schritt_wann_wo():
                     st.info("✓ Adresse wurde aus GPS-Koordinaten ermittelt.")
                 else:
                     # Button für Adressermittlung anzeigen
-                    st.write(f"🔧 Debug: Button wird angezeigt. lat={lat}, lng={lng}")
-
                     if st.button("📍 Adresse aus Koordinaten ermitteln", type="primary", key="geocode_btn"):
-                        st.write("🔧 Debug: Button wurde geklickt!")
-
                         try:
                             adresse = _reverse_geocode(lat, lng)
 
-                            st.write(f"🔧 Debug: Geocoding Ergebnis: {adresse}")
-
                             if adresse:
-                                st.write("🔧 Debug: Adresse gefunden, setze Session State...")
-
                                 # Adressfelder in Session State für Widgets setzen
                                 st.session_state['addr_strasse'] = adresse.get('strasse', '')
                                 st.session_state['addr_hausnummer'] = adresse.get('hausnummer', '')
                                 st.session_state['addr_plz'] = adresse.get('plz', '')
                                 st.session_state['addr_ort'] = adresse.get('ort', '')
                                 st.session_state['addr_land'] = adresse.get('land', 'Deutschland') or 'Deutschland'
-
-                                st.write(f"🔧 Debug: Session State gesetzt:")
-                                st.write(f"  - addr_strasse: {st.session_state.get('addr_strasse')}")
-                                st.write(f"  - addr_plz: {st.session_state.get('addr_plz')}")
-                                st.write(f"  - addr_ort: {st.session_state.get('addr_ort')}")
 
                                 # Auch in ort_details speichern
                                 st.session_state.unfallaufnahme['ort_details'] = {
@@ -856,16 +797,11 @@ def _render_schritt_wann_wo():
                                 st.session_state.unfallaufnahme['adresse_ermittelt'] = True
 
                                 st.success(f"✅ Adresse gefunden: {adresse.get('display_name', '')}")
-
-                                # Button um Seite neu zu laden und Felder anzuzeigen
-                                if st.button("🔄 Adresse in Felder übernehmen", key="apply_address"):
-                                    st.rerun()
+                                st.rerun()
                             else:
                                 st.error("❌ Adresse konnte nicht ermittelt werden. Bitte manuell eingeben.")
                         except Exception as e:
-                            st.error(f"❌ Fehler bei der Adressermittlung: {type(e).__name__}: {str(e)}")
-                            import traceback
-                            st.code(traceback.format_exc())
+                            st.error(f"❌ Fehler bei der Adressermittlung: {str(e)}")
                             st.info("💡 Bitte geben Sie die Adresse manuell ein.")
 
     # Manuelle Adresseingabe (immer anzeigen)

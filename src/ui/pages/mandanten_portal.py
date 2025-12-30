@@ -206,7 +206,8 @@ def _render_fortschritt(db: Session, projekt: UnfallProjekt):
                 st.markdown("Ausstehend")
 
         with col2:
-            titel = ms.titel
+            # Titel aus code (lesbar formatiert) oder beschreibung
+            titel = ms.beschreibung or ms.code.replace("_", " ").title() if ms.code else "Meilenstein"
             if ms.status == MeilensteinStatus.ERLEDIGT:
                 st.markdown(f"~~{titel}~~")
                 if ms.erledigt_am:
@@ -215,9 +216,6 @@ def _render_fortschritt(db: Session, projekt: UnfallProjekt):
                 st.markdown(f"**{titel}**")
             else:
                 st.markdown(titel)
-
-            if ms.beschreibung:
-                st.caption(ms.beschreibung)
 
         st.markdown("---")
 
