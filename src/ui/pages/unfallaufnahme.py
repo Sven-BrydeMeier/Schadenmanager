@@ -575,33 +575,53 @@ def _render_schritt_wann_wo():
     )
 
     if ort_methode == "Aktuellen Standort verwenden (GPS)":
-        # JavaScript für GPS-Erfassung mit Auto-Copy
+        # JavaScript für GPS-Erfassung MIT automatischer Adressermittlung
         gps_html = """
         <div id="gps-container" style="margin: 10px 0;">
-            <button id="gps-btn" onclick="getLocation()" style="
+            <button id="gps-btn" onclick="getLocationAndAddress()" style="
                 background-color: #667eea;
                 color: white;
                 border: none;
-                padding: 15px 24px;
-                border-radius: 8px;
+                padding: 18px 24px;
+                border-radius: 10px;
                 cursor: pointer;
-                font-size: 18px;
+                font-size: 20px;
                 width: 100%;
                 font-weight: bold;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             ">
-                📍 Meinen Standort erfassen
+                📍 Standort & Adresse automatisch erfassen
             </button>
-            <div id="gps-result" style="margin-top: 15px; padding: 20px; background: #d1fae5; border-radius: 8px; display: none; border: 2px solid #059669;">
+
+            <div id="gps-loading" style="display: none; margin-top: 15px; padding: 20px; background: #e0f2fe; border-radius: 8px; text-align: center;">
+                <div style="font-size: 30px; margin-bottom: 10px;">⏳</div>
+                <div id="loading-text" style="color: #0369a1; font-weight: bold;">Erfasse GPS-Position...</div>
+            </div>
+
+            <div id="gps-result" style="margin-top: 15px; padding: 20px; background: #d1fae5; border-radius: 10px; display: none; border: 2px solid #059669;">
                 <div style="text-align: center; margin-bottom: 15px;">
-                    <span style="font-size: 40px;">✅</span>
-                    <h3 style="color: #065f46; margin: 10px 0 5px 0;">Standort erfasst & kopiert!</h3>
-                    <p style="color: #065f46; margin: 0;">Bitte unten in das Feld einfügen (Strg+V / Cmd+V)</p>
+                    <span style="font-size: 50px;">✅</span>
+                    <h3 style="color: #065f46; margin: 10px 0 5px 0;">Standort & Adresse erfasst!</h3>
+                    <p style="color: #065f46; margin: 0; font-weight: bold;">Daten wurden in die Zwischenablage kopiert</p>
                 </div>
-                <div style="background: white; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 20px; text-align: center; border: 2px dashed #059669;">
-                    <span id="gps-coords" style="font-weight: bold; color: #065f46;"></span>
+
+                <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0; border: 1px solid #059669;">
+                    <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px;">KOORDINATEN</div>
+                    <div id="result-coords" style="font-family: monospace; font-size: 16px; color: #065f46; font-weight: bold;"></div>
                 </div>
+
+                <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #059669;">
+                    <div style="font-size: 12px; color: #6b7280; margin-bottom: 5px;">ADRESSE</div>
+                    <div id="result-street" style="font-size: 16px; color: #065f46;"></div>
+                    <div id="result-city" style="font-size: 16px; color: #065f46;"></div>
+                </div>
+
+                <div style="margin-top: 15px; text-align: center; padding: 15px; background: #fef3c7; border-radius: 8px; border: 2px solid #f59e0b;">
+                    <strong style="color: #92400e;">👇 Jetzt unten einfügen (Strg+V / Cmd+V)</strong>
+                </div>
+
                 <div style="margin-top: 15px; display: flex; gap: 10px;">
-                    <button id="copy-btn" onclick="copyCoords()" style="
+                    <button onclick="copyAllData()" style="
                         flex: 1;
                         background-color: #059669;
                         color: white;
@@ -609,7 +629,7 @@ def _render_schritt_wann_wo():
                         padding: 12px;
                         border-radius: 5px;
                         cursor: pointer;
-                        font-size: 16px;
+                        font-size: 14px;
                         font-weight: bold;
                     ">📋 Nochmal kopieren</button>
                     <a id="gps-maps-link" href="#" target="_blank" style="
@@ -621,161 +641,182 @@ def _render_schritt_wann_wo():
                         border-radius: 5px;
                         text-align: center;
                         font-weight: bold;
-                    ">🗺️ In Maps prüfen</a>
+                    ">🗺️ Maps</a>
                 </div>
             </div>
-            <div id="gps-error" style="margin-top: 10px; padding: 15px; background: #fef2f2; border-radius: 8px; color: #dc2626; display: none;"></div>
-        </div>
-        <script>
-        var capturedLat = null;
-        var capturedLng = null;
 
-        function getLocation() {
+            <div id="gps-error" style="margin-top: 15px; padding: 15px; background: #fef2f2; border-radius: 8px; color: #dc2626; display: none;"></div>
+        </div>
+
+        <script>
+        var allData = '';
+
+        function getLocationAndAddress() {
             var btn = document.getElementById('gps-btn');
+            var loading = document.getElementById('gps-loading');
+            var loadingText = document.getElementById('loading-text');
             var result = document.getElementById('gps-result');
             var error = document.getElementById('gps-error');
-            var coords = document.getElementById('gps-coords');
-            var mapsLink = document.getElementById('gps-maps-link');
 
-            btn.innerHTML = '⏳ Erfasse Standort...';
-            btn.disabled = true;
+            btn.style.display = 'none';
+            loading.style.display = 'block';
             result.style.display = 'none';
             error.style.display = 'none';
 
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    function(position) {
-                        capturedLat = position.coords.latitude.toFixed(6);
-                        capturedLng = position.coords.longitude.toFixed(6);
-                        var coordStr = capturedLat + ', ' + capturedLng;
-                        coords.innerHTML = coordStr;
-                        mapsLink.href = 'https://www.google.com/maps?q=' + capturedLat + ',' + capturedLng;
-                        result.style.display = 'block';
-                        btn.innerHTML = '✓ Standort erfasst - Koordinaten kopiert!';
-                        btn.style.backgroundColor = '#059669';
-
-                        // Automatisch in Zwischenablage kopieren
-                        navigator.clipboard.writeText(coordStr).then(function() {
-                            console.log('Koordinaten automatisch kopiert');
-                        }).catch(function(err) {
-                            console.log('Auto-copy fehlgeschlagen:', err);
-                        });
-
-                        // In localStorage speichern als Backup
-                        localStorage.setItem('unfallort_gps', coordStr);
-                    },
-                    function(err) {
-                        error.innerHTML = '<strong>Fehler:</strong> ' + err.message + '<br><br>Mögliche Lösungen:<br>• Standortzugriff im Browser erlauben<br>• GPS aktivieren (bei Mobilgeräten)<br>• Koordinaten manuell eingeben';
-                        error.style.display = 'block';
-                        btn.innerHTML = '📍 Erneut versuchen';
-                        btn.disabled = false;
-                        btn.style.backgroundColor = '#667eea';
-                    },
-                    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-                );
-            } else {
-                error.innerHTML = 'GPS wird von diesem Browser nicht unterstützt.<br>Bitte geben Sie die Koordinaten manuell ein.';
-                error.style.display = 'block';
-                btn.innerHTML = '📍 Nicht verfügbar';
-                btn.style.backgroundColor = '#9ca3af';
+            if (!navigator.geolocation) {
+                showError('GPS wird von diesem Browser nicht unterstützt.');
+                return;
             }
+
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+                    var lat = position.coords.latitude.toFixed(6);
+                    var lng = position.coords.longitude.toFixed(6);
+
+                    loadingText.innerHTML = 'Ermittle Adresse...';
+
+                    // Nominatim API aufrufen
+                    fetch('https://nominatim.openstreetmap.org/reverse?lat=' + lat + '&lon=' + lng + '&format=json&addressdetails=1&accept-language=de', {
+                        headers: { 'User-Agent': 'Schadenmanager-App/1.0' }
+                    })
+                    .then(function(response) { return response.json(); })
+                    .then(function(data) {
+                        var addr = data.address || {};
+
+                        var strasse = addr.road || addr.pedestrian || addr.street || '';
+                        var hausnummer = addr.house_number || '';
+                        var plz = addr.postcode || '';
+                        var ort = addr.city || addr.town || addr.village || addr.municipality || '';
+                        var land = addr.country || 'Deutschland';
+
+                        // Daten-String erstellen (Format: GPS|STR|NR|PLZ|ORT|LAND)
+                        allData = 'GPS:' + lat + ',' + lng + '|STR:' + strasse + '|NR:' + hausnummer + '|PLZ:' + plz + '|ORT:' + ort + '|LAND:' + land;
+
+                        // UI aktualisieren
+                        document.getElementById('result-coords').innerHTML = lat + ', ' + lng;
+                        document.getElementById('result-street').innerHTML = strasse + (hausnummer ? ' ' + hausnummer : '');
+                        document.getElementById('result-city').innerHTML = plz + ' ' + ort;
+                        document.getElementById('gps-maps-link').href = 'https://www.google.com/maps?q=' + lat + ',' + lng;
+
+                        // In Zwischenablage kopieren
+                        navigator.clipboard.writeText(allData).then(function() {
+                            loading.style.display = 'none';
+                            result.style.display = 'block';
+                        }).catch(function() {
+                            loading.style.display = 'none';
+                            result.style.display = 'block';
+                        });
+                    })
+                    .catch(function(err) {
+                        // Fallback: Nur Koordinaten verwenden
+                        allData = 'GPS:' + lat + ',' + lng + '|STR:|NR:|PLZ:|ORT:|LAND:Deutschland';
+                        document.getElementById('result-coords').innerHTML = lat + ', ' + lng;
+                        document.getElementById('result-street').innerHTML = '(Adresse konnte nicht ermittelt werden)';
+                        document.getElementById('result-city').innerHTML = 'Bitte manuell eingeben';
+                        document.getElementById('gps-maps-link').href = 'https://www.google.com/maps?q=' + lat + ',' + lng;
+
+                        navigator.clipboard.writeText(allData);
+                        loading.style.display = 'none';
+                        result.style.display = 'block';
+                    });
+                },
+                function(err) {
+                    showError('<strong>GPS-Fehler:</strong> ' + err.message + '<br><br>• Standortzugriff im Browser erlauben<br>• GPS aktivieren (bei Mobilgeräten)');
+                },
+                { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+            );
         }
 
-        function copyCoords() {
-            var coordStr = capturedLat + ', ' + capturedLng;
-            navigator.clipboard.writeText(coordStr).then(function() {
-                var copyBtn = document.getElementById('copy-btn');
-                copyBtn.innerHTML = '✅ Kopiert!';
-                setTimeout(function() {
-                    copyBtn.innerHTML = '📋 Nochmal kopieren';
-                }, 2000);
+        function showError(msg) {
+            document.getElementById('gps-btn').style.display = 'block';
+            document.getElementById('gps-loading').style.display = 'none';
+            document.getElementById('gps-error').innerHTML = msg;
+            document.getElementById('gps-error').style.display = 'block';
+        }
+
+        function copyAllData() {
+            navigator.clipboard.writeText(allData).then(function() {
+                alert('Daten kopiert! Jetzt unten einfügen.');
             });
         }
         </script>
         """
-        components.html(gps_html, height=280)
+        components.html(gps_html, height=420)
 
-        # Auffälliges Eingabefeld mit Anleitung
+        # Eingabefeld für die kopierten Daten
         st.markdown("""
-        <div style="background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; padding: 10px; margin: 10px 0;">
-            <strong>👇 Hier die kopierten Koordinaten einfügen (Strg+V / Cmd+V):</strong>
+        <div style="background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; padding: 12px; margin: 10px 0;">
+            <strong>👇 Hier die kopierten Daten einfügen (Strg+V / Cmd+V):</strong>
         </div>
         """, unsafe_allow_html=True)
 
-        gps_koordinaten = st.text_input(
-            "GPS-Koordinaten",
-            value=st.session_state.unfallaufnahme.get('gps_koordinaten', ''),
-            placeholder="Koordinaten hier einfügen...",
-            help="Format: Breitengrad, Längengrad (z.B. 52.520008, 13.404954)",
-            key="gps_input",
+        gps_daten_input = st.text_input(
+            "GPS-Daten",
+            value="",
+            placeholder="Daten hier einfügen...",
+            key="gps_data_input",
             label_visibility="collapsed"
         )
 
-        # Speichere aktuelle Koordinaten
-        st.session_state.unfallaufnahme['gps_koordinaten'] = gps_koordinaten
+        # Parse die eingefügten Daten
+        if gps_daten_input and gps_daten_input.startswith("GPS:"):
+            try:
+                # Format: GPS:lat,lng|STR:street|NR:nr|PLZ:plz|ORT:city|LAND:country
+                parts = gps_daten_input.split("|")
+                parsed = {}
+                for part in parts:
+                    if ":" in part:
+                        key, value = part.split(":", 1)
+                        parsed[key] = value
 
+                # GPS-Koordinaten extrahieren
+                gps_coords = parsed.get("GPS", "")
+                if "," in gps_coords:
+                    lat_str, lng_str = gps_coords.split(",")
+                    lat = float(lat_str)
+                    lng = float(lng_str)
+
+                    # Koordinaten speichern
+                    gps_koordinaten = f"{lat}, {lng}"
+                    st.session_state.unfallaufnahme['gps_koordinaten'] = gps_koordinaten
+
+                    # Adresse extrahieren und in Session State setzen
+                    strasse = parsed.get("STR", "")
+                    hausnummer = parsed.get("NR", "")
+                    plz = parsed.get("PLZ", "")
+                    ort = parsed.get("ORT", "")
+                    land = parsed.get("LAND", "Deutschland") or "Deutschland"
+
+                    # In Session State für Widgets setzen
+                    st.session_state['addr_strasse'] = strasse
+                    st.session_state['addr_hausnummer'] = hausnummer
+                    st.session_state['addr_plz'] = plz
+                    st.session_state['addr_ort'] = ort
+                    st.session_state['addr_land'] = land
+
+                    # Auch in ort_details speichern
+                    st.session_state.unfallaufnahme['ort_details'] = {
+                        'strasse': strasse,
+                        'hausnummer': hausnummer,
+                        'plz': plz,
+                        'ort': ort,
+                        'land': land
+                    }
+                    st.session_state.unfallaufnahme['letzte_aufgeloeste_coords'] = gps_koordinaten
+                    st.session_state.unfallaufnahme['adresse_ermittelt'] = True
+
+                    st.success(f"✅ Daten übernommen: {strasse} {hausnummer}, {plz} {ort}")
+                    st.rerun()
+
+            except Exception as e:
+                st.error(f"Fehler beim Parsen der Daten: {e}")
+
+        # Zeige aktuelle Koordinaten falls vorhanden
+        gps_koordinaten = st.session_state.unfallaufnahme.get('gps_koordinaten', '')
         if gps_koordinaten:
             st.success(f"✓ Koordinaten: {gps_koordinaten}")
-            # Google Maps Link
             coords_clean = gps_koordinaten.replace(" ", "")
             st.markdown(f"[📍 In Google Maps anzeigen](https://www.google.com/maps?q={coords_clean})")
-
-            # Prüfe ob Koordinaten gültig sind
-            koordinaten_gueltig = False
-            lat = None
-            lng = None
-            try:
-                parts = gps_koordinaten.replace(" ", "").split(",")
-                if len(parts) == 2:
-                    lat = float(parts[0])
-                    lng = float(parts[1])
-                    if -90 <= lat <= 90 and -180 <= lng <= 180:
-                        koordinaten_gueltig = True
-            except ValueError:
-                pass
-
-            if not koordinaten_gueltig:
-                st.warning("⚠️ Ungültiges Koordinatenformat. Bitte prüfen Sie die Eingabe.")
-            else:
-                # Prüfe ob Adresse bereits ermittelt wurde
-                letzte_aufgeloeste_coords = st.session_state.unfallaufnahme.get('letzte_aufgeloeste_coords', '')
-                adresse_bereits_ermittelt = (coords_clean == letzte_aufgeloeste_coords.replace(" ", ""))
-
-                if adresse_bereits_ermittelt and st.session_state.unfallaufnahme.get('ort_details', {}).get('strasse'):
-                    st.info("✓ Adresse wurde aus GPS-Koordinaten ermittelt.")
-                else:
-                    # Button für Adressermittlung anzeigen
-                    if st.button("📍 Adresse aus Koordinaten ermitteln", type="primary", key="geocode_btn"):
-                        try:
-                            adresse = _reverse_geocode(lat, lng)
-
-                            if adresse:
-                                # Adressfelder in Session State für Widgets setzen
-                                st.session_state['addr_strasse'] = adresse.get('strasse', '')
-                                st.session_state['addr_hausnummer'] = adresse.get('hausnummer', '')
-                                st.session_state['addr_plz'] = adresse.get('plz', '')
-                                st.session_state['addr_ort'] = adresse.get('ort', '')
-                                st.session_state['addr_land'] = adresse.get('land', 'Deutschland') or 'Deutschland'
-
-                                # Auch in ort_details speichern
-                                st.session_state.unfallaufnahme['ort_details'] = {
-                                    'strasse': adresse.get('strasse', ''),
-                                    'hausnummer': adresse.get('hausnummer', ''),
-                                    'plz': adresse.get('plz', ''),
-                                    'ort': adresse.get('ort', ''),
-                                    'land': adresse.get('land', 'Deutschland') or 'Deutschland'
-                                }
-                                # Merken welche Koordinaten aufgelöst wurden
-                                st.session_state.unfallaufnahme['letzte_aufgeloeste_coords'] = gps_koordinaten
-                                st.session_state.unfallaufnahme['adresse_ermittelt'] = True
-
-                                st.success(f"✅ Adresse gefunden: {adresse.get('display_name', '')}")
-                                st.rerun()
-                            else:
-                                st.error("❌ Adresse konnte nicht ermittelt werden. Bitte manuell eingeben.")
-                        except Exception as e:
-                            st.error(f"❌ Fehler bei der Adressermittlung: {str(e)}")
-                            st.info("💡 Bitte geben Sie die Adresse manuell ein.")
 
     # Manuelle Adresseingabe (immer anzeigen)
     st.markdown("#### Adresse")
