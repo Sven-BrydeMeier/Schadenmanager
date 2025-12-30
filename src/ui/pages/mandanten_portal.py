@@ -333,9 +333,18 @@ def _render_kosten_uebersicht(db: Session, projekt: UnfallProjekt):
             st.markdown(f"{float(k.betrag_brutto or 0):,.2f} EUR")
 
         with col3:
-            if k.bezahlt and k.bezahlt_betrag and k.bezahlt_betrag > 0:
+            betrag_gefordert = k.betrag_brutto or 0
+            betrag_gezahlt = k.bezahlt_betrag or 0
+
+            if k.bezahlt and betrag_gezahlt >= betrag_gefordert and betrag_gefordert > 0:
+                # Vollständig erstattet (gezahlter Betrag >= geforderter Betrag)
                 st.markdown(badge("Erstattet", "success"), unsafe_allow_html=True)
+            elif betrag_gezahlt > 0 and betrag_gezahlt < betrag_gefordert:
+                # Teilweise erstattet (es wurde etwas gezahlt, aber weniger als gefordert)
+                st.markdown(badge("Teilweise", "info"), unsafe_allow_html=True)
+                st.caption(f"({float(betrag_gezahlt):,.2f} EUR)")
             else:
+                # Noch offen (nichts gezahlt)
                 st.markdown(badge("Offen", "warning"), unsafe_allow_html=True)
 
     st.markdown("---")
