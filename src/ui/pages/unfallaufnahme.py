@@ -537,6 +537,13 @@ def _render_schritt_wann_wo():
     # WICHTIG: Query-Parameter ganz am Anfang verarbeiten, BEVOR Widgets erstellt werden
     # Dies stellt sicher, dass GPS-Daten übernommen werden, unabhängig vom Radio-Button-Status
     query_params = st.query_params
+
+    # DEBUG: Zeige alle Query-Parameter
+    if query_params:
+        all_params = dict(query_params)
+        if all_params:
+            st.info(f"DEBUG Query-Params: {all_params}")
+
     if 'gps_lat' in query_params and 'gps_lng' in query_params:
         try:
             lat_param = float(query_params.get('gps_lat'))
@@ -548,6 +555,9 @@ def _render_schritt_wann_wo():
             plz = query_params.get('plz', '')
             ort = query_params.get('ort', '')
             land = query_params.get('land', 'Deutschland') or 'Deutschland'
+
+            # DEBUG: Zeige gelesene Werte
+            st.warning(f"DEBUG Gelesen: Straße='{strasse}', Nr='{hausnummer}', PLZ='{plz}', Ort='{ort}', Land='{land}'")
 
             # Koordinaten speichern
             gps_koordinaten = f"{lat_param}, {lng_param}"
