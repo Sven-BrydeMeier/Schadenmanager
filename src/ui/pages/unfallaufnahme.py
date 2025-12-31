@@ -553,6 +553,12 @@ def _render_schritt_wann_wo():
             gps_koordinaten = f"{lat_param}, {lng_param}"
             st.session_state.unfallaufnahme['gps_koordinaten'] = gps_koordinaten
 
+            # WICHTIG: Alte Widget-Keys löschen, damit Streamlit die neuen Werte übernimmt
+            # (Streamlit-Widgets haben einen internen Cache, der sonst die alten Werte behält)
+            for key in ['addr_strasse', 'addr_hausnummer', 'addr_plz', 'addr_ort', 'addr_land']:
+                if key in st.session_state:
+                    del st.session_state[key]
+
             # Adressfelder in Session State setzen (BEVOR Widgets erstellt werden!)
             st.session_state['addr_strasse'] = strasse
             st.session_state['addr_hausnummer'] = hausnummer
