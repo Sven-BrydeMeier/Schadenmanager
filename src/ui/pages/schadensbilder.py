@@ -264,7 +264,7 @@ def _render_upload(projekt_id: int):
         from src.models import Dokument
 
         dokumente = db.query(Dokument).filter(
-            Dokument.projekt_id == projekt_id,
+            Dokument.unfallprojekt_id == projekt_id,
             Dokument.dateipfad.ilike("%.jpg") | Dokument.dateipfad.ilike("%.jpeg") |
             Dokument.dateipfad.ilike("%.png") | Dokument.dateipfad.ilike("%.gif")
         ).all()
