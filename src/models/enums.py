@@ -72,3 +72,36 @@ class DokumentTyp(PyEnum):
     ANSPRUCHSSCHREIBEN = "ANSPRUCHSSCHREIBEN"
     VOLLMACHT = "VOLLMACHT"
     SONSTIG = "SONSTIG"
+
+
+class SchreibenTyp(PyEnum):
+    """Typen von generierbaren Schreiben im Dokumenten-Chat"""
+    ANSPRUCHSSCHREIBEN = "ANSPRUCHSSCHREIBEN"
+    KUERZUNGSERWIDERUNG = "KUERZUNGSERWIDERUNG"
+    MAHNUNG = "MAHNUNG"
+    MANDANTENINFORMATION = "MANDANTENINFORMATION"
+    ANFRAGE = "ANFRAGE"
+    STELLUNGNAHME = "STELLUNGNAHME"
+    AUFFORDERUNG = "AUFFORDERUNG"
+    FREIES_SCHREIBEN = "FREIES_SCHREIBEN"
+
+
+class EmpfaengerTyp(PyEnum):
+    """Mögliche Empfänger von Schreiben"""
+    VERSICHERUNG_GEGNER = "VERSICHERUNG_GEGNER"
+    VERSICHERUNG_EIGEN = "VERSICHERUNG_EIGEN"
+    POLIZEI = "POLIZEI"
+    STAATSANWALTSCHAFT = "STAATSANWALTSCHAFT"
+    MANDANT = "MANDANT"
+    GEGNER = "GEGNER"
+    WERKSTATT = "WERKSTATT"
+    GUTACHTER = "GUTACHTER"
+    GERICHT = "GERICHT"
+    SONSTIG = "SONSTIG"
+
+
+class ChatNachrichtRolle(PyEnum):
+    """Rolle in einer Chat-Nachricht"""
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"

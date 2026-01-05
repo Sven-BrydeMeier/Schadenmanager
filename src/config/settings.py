@@ -32,6 +32,15 @@ class Settings(BaseSettings):
     anthropic_api_key: Optional[str] = Field(default=None)
     ki_provider: str = Field(default="openai", description="openai oder anthropic")
 
+    # Vector Store (Dokumenten-Chat)
+    vector_store_path: str = Field(default="./data/vectordb")
+    embedding_model: str = Field(default="text-embedding-3-small")
+    embedding_chunk_size: int = Field(default=1000)
+    embedding_chunk_overlap: int = Field(default=200)
+    chat_max_context_docs: int = Field(default=5)
+    chat_max_tokens: int = Field(default=4000)
+    chat_temperature: float = Field(default=0.7)
+
     # OCR
     tesseract_cmd: str = Field(default="/usr/bin/tesseract")
 

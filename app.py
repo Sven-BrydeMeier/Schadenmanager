@@ -37,6 +37,7 @@ from src.ui.pages.haftungsquote import render_haftungsquote
 from src.ui.pages.datev import render_datev
 from src.ui.pages.restwert import render_restwert
 from src.ui.pages.ki_analyse import render_ki_analyse
+from src.ui.pages.dokumenten_chat import render_dokumenten_chat
 from src.ui.pages.fristen import render_fristen
 from src.ui.pages.vergleich import render_vergleich
 from src.ui.pages.email import render_email
@@ -203,7 +204,8 @@ def render_sidebar(rolle: str) -> str:
                 menu_button("Ersatzwagen-Verwaltung")
 
         # ===== WERKZEUGE & KI =====
-        with st.expander("🛠️ Werkzeuge & KI", expanded=aktuelle_seite in ["Werkzeuge", "KI-Analyse"]):
+        with st.expander("🛠️ Werkzeuge & KI", expanded=aktuelle_seite in ["Werkzeuge", "KI-Analyse", "Dokumenten-Chat"]):
+            menu_button("Dokumenten-Chat")
             if rolle in ["ANWALT", "WERKSTATT", "ADMIN"]:
                 menu_button("Werkzeuge")
             if rolle in ["ADMIN", "ANWALT"]:
@@ -484,6 +486,9 @@ def render_page(page: str, rolle: str):
 
     elif page == "KI-Analyse":
         render_ki_analyse()
+
+    elif page == "Dokumenten-Chat":
+        render_dokumenten_chat()
 
     elif page == "Fristen":
         render_fristen()

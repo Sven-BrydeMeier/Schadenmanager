@@ -1,7 +1,8 @@
 from src.models.base import Base
 from src.models.enums import (
     Rollen, OrgTyp, MeilensteinStatus, KostenKategorie,
-    KostenAmpel, KorrespondenzRichtung, DokumentTyp
+    KostenAmpel, KorrespondenzRichtung, DokumentTyp,
+    SchreibenTyp, EmpfaengerTyp, ChatNachrichtRolle
 )
 from src.models.organisation import Organisation
 from src.models.user import User
@@ -19,6 +20,7 @@ from src.models.notiz import Notiz, Mahnung
 from src.models.checkliste import ChecklistenItem
 from src.models.signatur import DigitaleSignatur, SignaturAnforderung
 from src.models.unfallaufnahme_beteiligter import UnfallaufnahmeBeteiligter
+from src.models.chat_nachricht import ChatNachricht
 
 # Models aus Services (dort definiert wegen komplexer Abhängigkeiten)
 from src.services.dsgvo import DSGVOProtokoll, DSGVOAktionTyp
@@ -58,6 +60,7 @@ __all__ = [
     'Base',
     'Rollen', 'OrgTyp', 'MeilensteinStatus', 'KostenKategorie',
     'KostenAmpel', 'KorrespondenzRichtung', 'DokumentTyp',
+    'SchreibenTyp', 'EmpfaengerTyp', 'ChatNachrichtRolle', 'ChatNachricht',
     'Organisation', 'User', 'Fahrzeug', 'UnfallProjekt',
     'Dokument', 'TimelineMeilenstein', 'KostenPosition',
     'ErsatzwagenAnbieter', 'MietfahrzeugAngebot',
