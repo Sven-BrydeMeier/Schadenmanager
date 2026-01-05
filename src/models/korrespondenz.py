@@ -40,6 +40,11 @@ class Korrespondenz(Base):
     # Dokument-Referenz
     dokument_id = Column(Integer, ForeignKey("dokument.id"))
 
+    # Embedding für Stil-Referenz bei KI-Schreibvorschlägen
+    embedding_erstellt = Column(Boolean, default=False)
+    embedding_erstellt_am = Column(DateTime)
+    embedding_chunk_ids = Column(Text)  # JSON-Array mit ChromaDB Chunk-IDs
+
     # Timestamps
     erstellt_am = Column(DateTime, default=datetime.utcnow)
     aktualisiert_am = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -53,6 +53,10 @@ class Dokument(Base):
     beschreibung = Column(Text)
     notizen = Column(Text)
 
+    # Storage-Abstraktion (für Migration local -> Supabase)
+    storage_provider = Column(String(50), default="local")  # "local" oder "supabase"
+    storage_key = Column(String(500))  # Pfad/Key im Storage-Backend
+
     # Papierkorb (Soft-Delete)
     geloescht = Column(Boolean, default=False)
     geloescht_am = Column(DateTime)
@@ -111,3 +115,33 @@ class Dokument(Base):
             self.freigabe_uebersprungen_von += f",{user_id}"
         else:
             self.freigabe_uebersprungen_von = str(user_id)
+
+    def get_storage_key(self) -> str:
+        """Gibt den Storage-Key zurück (storage_key oder fallback auf dateipfad)"""
+        return self.storage_key or self.dateipfad
+
+    def get_bytes(self) -> bytes:
+        """Lädt die Datei-Bytes vom konfigurierten Storage-Backend"""
+        from src.storage import get_storage_backend
+        backend = get_storage_backend(self.storage_provider)
+        return backend.get_bytes(self.get_storage_key())
+
+    def get_signed_url(self, expires_in: int = 3600) -> str:
+        """
+        Generiert eine signierte URL für den Dateizugriff.
+
+        Args:
+            expires_in: Gültigkeitsdauer in Sekunden (Standard: 1 Stunde)
+
+        Returns:
+            Signierte URL oder lokaler Dateipfad
+        """
+        from src.storage import get_storage_backend
+        backend = get_storage_backend(self.storage_provider)
+        return backend.get_signed_url(self.get_storage_key(), expires_in)
+
+    def delete_from_storage(self) -> bool:
+        """Löscht die Datei aus dem Storage-Backend"""
+        from src.storage import get_storage_backend
+        backend = get_storage_backend(self.storage_provider)
+        return backend.delete(self.get_storage_key())

@@ -49,6 +49,17 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = Field(default=50)
     allowed_extensions: str = Field(default="pdf,png,jpg,jpeg,tiff,doc,docx")
 
+    # Storage Backend
+    storage_backend: str = Field(
+        default="local",
+        description="Storage-Backend: 'local' oder 'supabase'"
+    )
+
+    # Supabase (für Production)
+    supabase_url: Optional[str] = Field(default=None)
+    supabase_service_role_key: Optional[str] = Field(default=None)
+    supabase_bucket: str = Field(default="schadenmanager")
+
     # Papierkorb
     papierkorb_folder: str = Field(default="./papierkorb")
     papierkorb_aufbewahrung_stunden: int = Field(

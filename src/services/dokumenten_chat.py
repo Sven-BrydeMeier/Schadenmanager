@@ -19,6 +19,7 @@ from src.models import (
 from src.models.chat_nachricht import ChatNachricht
 from src.config.settings import get_settings
 from src.services.vector_store import VectorStoreService
+from src.services.korrespondenz_embeddings import get_korrespondenz_embedding_service
 
 
 @dataclass
@@ -114,6 +115,7 @@ Antworte auf Deutsch."""
         self.db = db
         self.settings = get_settings()
         self._vector_store = None
+        self._korrespondenz_embeddings = None
 
     @property
     def vector_store(self) -> VectorStoreService:
@@ -121,6 +123,13 @@ Antworte auf Deutsch."""
         if self._vector_store is None:
             self._vector_store = VectorStoreService()
         return self._vector_store
+
+    @property
+    def korrespondenz_embeddings(self):
+        """Lazy initialization des KorrespondenzEmbeddingService"""
+        if self._korrespondenz_embeddings is None:
+            self._korrespondenz_embeddings = get_korrespondenz_embedding_service()
+        return self._korrespondenz_embeddings
 
     def chat(
         self,
@@ -241,13 +250,21 @@ Antworte auf Deutsch."""
         # Projekt-Kontext
         kontext = self._sammle_projekt_kontext(projekt)
 
+        # Stil-Referenzen aus vergangenen Korrespondenzen suchen
+        stil_referenzen = self._hole_stil_referenzen(
+            schreiben_typ=schreiben_typ,
+            empfaenger_typ=empfaenger_typ,
+            projekt_id=projekt_id
+        )
+
         # Prompt erstellen
         prompt = self._erstelle_schreiben_prompt(
             schreiben_typ=schreiben_typ,
             empfaenger_typ=empfaenger_typ,
             empfaenger_daten=empfaenger_daten,
             projekt_kontext=kontext,
-            zusatz_anweisungen=zusatz_anweisungen
+            zusatz_anweisungen=zusatz_anweisungen,
+            stil_referenzen=stil_referenzen
         )
 
         # KI aufrufen
@@ -602,13 +619,51 @@ Wenn du die Antwort nicht aus den Dokumenten ableiten kannst, sage das ehrlich."
             "email": None
         })
 
+    def _hole_stil_referenzen(
+        self,
+        schreiben_typ: SchreibenTyp,
+        empfaenger_typ: EmpfaengerTyp,
+        projekt_id: int,
+        limit: int = 2
+    ) -> List[Dict[str, Any]]:
+        """
+        Holt Stil-Referenzen aus vergangenen Korrespondenzen.
+
+        Args:
+            schreiben_typ: Art des zu erstellenden Schreibens
+            empfaenger_typ: Typ des Empfängers
+            projekt_id: ID des aktuellen Projekts (wird ausgeschlossen)
+            limit: Maximale Anzahl Referenzen
+
+        Returns:
+            Liste von Referenz-Texten mit Metadaten
+        """
+        try:
+            # Kontext für die Suche
+            kontext = f"{schreiben_typ.value} {empfaenger_typ.value}"
+
+            referenzen = self.korrespondenz_embeddings.finde_stil_referenzen(
+                schreiben_typ=schreiben_typ.value,
+                empfaenger_typ=empfaenger_typ.value,
+                kontext=kontext,
+                limit=limit
+            )
+
+            # Nur Texte mit hohem Score verwenden
+            return [r for r in referenzen if r.get('score', 0) > 0.5]
+
+        except Exception:
+            # Bei Fehlern einfach keine Referenzen zurückgeben
+            return []
+
     def _erstelle_schreiben_prompt(
         self,
         schreiben_typ: SchreibenTyp,
         empfaenger_typ: EmpfaengerTyp,
         empfaenger_daten: Dict[str, Any],
         projekt_kontext: Dict[str, Any],
-        zusatz_anweisungen: Optional[str] = None
+        zusatz_anweisungen: Optional[str] = None,
+        stil_referenzen: Optional[List[Dict[str, Any]]] = None
     ) -> str:
         """Erstellt den Prompt für die Schreiben-Generierung"""
 
@@ -622,6 +677,18 @@ Wenn du die Antwort nicht aus den Dokumenten ableiten kannst, sage das ehrlich."
             "Angemessen formell"
         )
 
+        # Stil-Referenzen formatieren
+        referenz_text = ""
+        if stil_referenzen:
+            referenz_text = "\n\nSTIL-REFERENZEN (vergangene ähnliche Schreiben als Orientierung):\n"
+            for i, ref in enumerate(stil_referenzen, 1):
+                text = ref.get('text', '')
+                # Text kürzen wenn zu lang
+                if len(text) > 2000:
+                    text = text[:2000] + "..."
+                referenz_text += f"\n--- Referenz {i} ---\n{text}\n"
+            referenz_text += "\nOrientiere dich am Stil dieser Referenzen, aber passe den Inhalt an die aktuellen Falldaten an.\n"
+
         prompt = f"""Erstelle ein {typ_beschreibung}.
 
 EMPFÄNGER: {empfaenger_typ.value}
@@ -630,7 +697,7 @@ Stil-Hinweis: {empfaenger_hinweis}
 
 FALLDATEN:
 {json.dumps(projekt_kontext, ensure_ascii=False, indent=2)}
-
+{referenz_text}
 ANFORDERUNGEN:
 1. Professionelles Schreiben im angemessenen Stil
 2. Korrektes Datum und Anrede
