@@ -91,7 +91,7 @@ class UnfallProjekt(Base):
     kostenpositionen = relationship("KostenPosition", back_populates="projekt", cascade="all, delete-orphan")
     gebuehrenberechnungen = relationship("GebuehrenBerechnung", back_populates="projekt", cascade="all, delete-orphan")
     korrespondenzen = relationship("Korrespondenz", back_populates="projekt", cascade="all, delete-orphan")
-    emails = relationship("EmailDokument", back_populates="projekt", cascade="all, delete-orphan")
+    # emails relationship ist in Email-Model definiert (src/services/email_integration.py)
 
     def __repr__(self):
         return f"<UnfallProjekt(id={self.id}, projektnummer='{self.projektnummer}')>"

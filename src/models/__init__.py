@@ -21,6 +21,12 @@ from src.models.checkliste import ChecklistenItem
 from src.models.signatur import DigitaleSignatur, SignaturAnforderung
 from src.models.unfallaufnahme_beteiligter import UnfallaufnahmeBeteiligter
 from src.models.chat_nachricht import ChatNachricht
+from src.models.zusatzdaten import (
+    TUVDaten, TUVStatus,
+    LeasingKreditbank, FinanzierungsTyp,
+    PolizeiDienststelle,
+    Bankverbindung
+)
 
 # Models aus Services (dort definiert wegen komplexer Abhängigkeiten)
 from src.services.dsgvo import DSGVOProtokoll, DSGVOAktionTyp
@@ -101,5 +107,10 @@ __all__ = [
     'GutachtenPruefung', 'PruefungsSchwere', 'PruefungsKategorie',
     # Aktenimport
     'AktenImport', 'AktenDokument', 'AktenBeteiligter', 'DokumentFreigabe', 'Einladung',
-    'EinladungsStatus', 'BeteiligtenRolle'
+    'EinladungsStatus', 'BeteiligtenRolle',
+    # Zusatzdaten (TÜV, Leasing, Polizei, Bank)
+    'TUVDaten', 'TUVStatus',
+    'LeasingKreditbank', 'FinanzierungsTyp',
+    'PolizeiDienststelle',
+    'Bankverbindung'
 ]
