@@ -28,3 +28,6 @@ tiktoken>=0.5.0
 
 # Supabase (Storage & Database)
 supabase>=2.0.0
+
+# Email-Import (Drag & Drop)
+extract-msg>=0.48.0

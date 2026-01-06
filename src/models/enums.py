@@ -105,3 +105,25 @@ class ChatNachrichtRolle(PyEnum):
     USER = "user"
     ASSISTANT = "assistant"
     SYSTEM = "system"
+
+
+class EmailRichtung(PyEnum):
+    """Richtung einer Email"""
+    EINGEHEND = "EINGEHEND"
+    AUSGEHEND = "AUSGEHEND"
+
+
+class EmailStatus(PyEnum):
+    """Verarbeitungsstatus einer Email"""
+    NEU = "NEU"
+    ZUGEORDNET = "ZUGEORDNET"
+    BEARBEITET = "BEARBEITET"
+    ARCHIVIERT = "ARCHIVIERT"
+
+
+class EmailPrioritaet(PyEnum):
+    """Priorität einer Email"""
+    NIEDRIG = "NIEDRIG"
+    NORMAL = "NORMAL"
+    HOCH = "HOCH"
+    DRINGEND = "DRINGEND"

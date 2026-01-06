@@ -17,21 +17,134 @@ def render_email():
     st.title("📧 E-Mail-Integration")
 
     # Tabs
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "Posteingang", "Unzugeordnet", "Vorlagen", "Einstellungen"
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "📥 Posteingang", "📤 Import (Drag&Drop)", "📭 Unzugeordnet", "📝 Vorlagen", "⚙️ Einstellungen"
     ])
 
     with tab1:
         _render_posteingang()
 
     with tab2:
-        _render_unzugeordnet()
+        _render_email_import()
 
     with tab3:
-        _render_vorlagen()
+        _render_unzugeordnet()
 
     with tab4:
+        _render_vorlagen()
+
+    with tab5:
         _render_einstellungen()
+
+
+def _render_email_import():
+    """Email-Import via Drag & Drop"""
+    st.subheader("📤 Emails importieren (Drag & Drop)")
+
+    st.info("""
+    **Ziehen Sie Email-Dateien hierher, um sie zu importieren:**
+
+    - Unterstützte Formate: **.eml** (Standard), **.msg** (Outlook)
+    - Emails werden automatisch geparst (Absender, Empfänger, Betreff, Datum)
+    - Anhänge werden extrahiert und separat gespeichert
+    - Aktenzeichen werden automatisch erkannt und zugeordnet
+    """)
+
+    with get_session() as db:
+        service = EmailIntegrationService(db)
+
+        # Projekt-Auswahl für Zuordnung
+        from src.models import UnfallProjekt
+        projekte = db.query(UnfallProjekt).filter(
+            UnfallProjekt.abgeschlossen == False
+        ).order_by(UnfallProjekt.aktualisiert_am.desc()).limit(100).all()
+
+        projekt_optionen = {"-- Automatisch zuordnen --": None}
+        projekt_optionen.update({
+            f"{p.aktenzeichen or p.projektnummer}": p.id
+            for p in projekte
+        })
+
+        auswahl = st.selectbox(
+            "Akte für Zuordnung (optional)",
+            options=list(projekt_optionen.keys()),
+            help="Wählen Sie eine Akte oder lassen Sie automatisch zuordnen"
+        )
+
+        projekt_id = projekt_optionen.get(auswahl)
+
+        st.markdown("---")
+
+        # File Uploader
+        uploaded_files = st.file_uploader(
+            "Email-Dateien hochladen",
+            type=["eml", "msg"],
+            accept_multiple_files=True,
+            key="email_import_upload",
+            help="Ziehen Sie .eml oder .msg Dateien hierher"
+        )
+
+        if uploaded_files:
+            st.markdown("---")
+            st.subheader(f"📋 {len(uploaded_files)} Datei(en) ausgewählt")
+
+            erfolge = 0
+            fehler = []
+            bereits_vorhanden = 0
+
+            progress = st.progress(0)
+
+            for i, file in enumerate(uploaded_files):
+                progress.progress((i + 1) / len(uploaded_files))
+
+                with st.spinner(f"Importiere {file.name}..."):
+                    bytes_data = file.read()
+
+                    # User-ID (in Produktion aus Session)
+                    user_id = st.session_state.get("user_id", 1)
+
+                    email_obj, error = service.importiere_email_datei(
+                        datei_bytes=bytes_data,
+                        dateiname=file.name,
+                        user_id=user_id,
+                        projekt_id=projekt_id
+                    )
+
+                    if error:
+                        if "bereits importiert" in error.lower():
+                            bereits_vorhanden += 1
+                        else:
+                            fehler.append(f"{file.name}: {error}")
+                    else:
+                        erfolge += 1
+
+            progress.empty()
+
+            # Ergebnis anzeigen
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                if erfolge > 0:
+                    st.success(f"✅ {erfolge} importiert")
+
+            with col2:
+                if bereits_vorhanden > 0:
+                    st.info(f"ℹ️ {bereits_vorhanden} bereits vorhanden")
+
+            with col3:
+                if fehler:
+                    st.error(f"❌ {len(fehler)} Fehler")
+
+            if fehler:
+                with st.expander("Fehler-Details"):
+                    for f in fehler:
+                        st.write(f"- {f}")
+
+            if erfolge > 0:
+                db.commit()
+                st.markdown("---")
+                if st.button("🔄 Posteingang anzeigen"):
+                    st.rerun()
 
 
 def _render_posteingang():

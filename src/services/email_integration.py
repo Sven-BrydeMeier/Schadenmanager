@@ -3,7 +3,7 @@ E-Mail-Integration Service
 Automatische E-Mail-Verarbeitung und Zuordnung zu Projekten
 """
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from enum import Enum
 import json
 import re
@@ -122,6 +122,24 @@ class Email(Base):
     # Thread
     thread_id = Column(String(500))
     antwort_auf_id = Column(Integer, ForeignKey("email.id"))
+
+    # Datei-Import (für .eml/.msg Drag & Drop)
+    original_dateiname = Column(String(255))
+    dateipfad = Column(String(500))
+    dateigroesse = Column(Integer)
+    storage_provider = Column(String(50), default="local")
+    storage_key = Column(String(500))
+    importiert_via = Column(String(50))  # "IMAP", "DRAG_DROP", "UPLOAD"
+
+    # KI-Verarbeitung
+    ki_zusammenfassung = Column(Text)
+    ki_kategorie = Column(String(100))
+    ki_aktenzeichen_erkannt = Column(String(100))
+    ki_verarbeitet = Column(Boolean, default=False)
+    ki_verarbeitet_am = Column(DateTime)
+
+    # Hochgeladen von
+    hochgeladen_von_user_id = Column(Integer, ForeignKey("user.id"))
 
     # Metadaten
     erstellt_am = Column(DateTime, default=datetime.now)
@@ -526,6 +544,203 @@ class EmailIntegrationService:
             'unzugeordnet': len([e for e in alle_emails if not e.projekt_id]),
             'dringend': len([e for e in alle_emails if e.prioritaet == EmailPrioritaet.DRINGEND and not e.gelesen])
         }
+
+    def importiere_email_datei(
+        self,
+        datei_bytes: bytes,
+        dateiname: str,
+        user_id: int,
+        projekt_id: Optional[int] = None
+    ) -> Tuple[Optional['Email'], str]:
+        """
+        Importiert eine Email aus einer .eml oder .msg Datei.
+
+        Args:
+            datei_bytes: Die Datei-Bytes
+            dateiname: Original-Dateiname
+            user_id: ID des hochladenden Users
+            projekt_id: Optionale Projekt-Zuordnung
+
+        Returns:
+            Tuple aus (Email-Objekt, Fehlermeldung)
+        """
+        from src.services.email_parser import get_email_parser
+        from src.storage import get_storage_backend, generate_storage_key
+        from src.config.settings import get_settings
+
+        parser = get_email_parser()
+        settings = get_settings()
+
+        # Email parsen
+        geparste_email, fehler = parser.parse_bytes(datei_bytes, dateiname)
+
+        if fehler:
+            return None, fehler
+
+        # Prüfen ob bereits importiert
+        existiert = self.db.query(Email).filter(
+            Email.message_id == geparste_email.message_id
+        ).first()
+
+        if existiert:
+            return existiert, "Email bereits importiert"
+
+        # Email-Datei speichern
+        storage = get_storage_backend()
+
+        storage_key = generate_storage_key(
+            projekt_id=projekt_id or 0,
+            kategorie="emails",
+            dateiname=dateiname
+        )
+
+        try:
+            storage.put_bytes(storage_key, datei_bytes, "message/rfc822")
+        except Exception as e:
+            return None, f"Fehler beim Speichern: {str(e)}"
+
+        # Email-Objekt erstellen
+        von_str = f"{geparste_email.von_name} <{geparste_email.von_email}>" if geparste_email.von_name else geparste_email.von_email
+
+        email_obj = Email(
+            projekt_id=projekt_id,
+            message_id=geparste_email.message_id,
+            von=von_str,
+            an=", ".join(geparste_email.an_emails),
+            cc=", ".join(geparste_email.cc_emails) if geparste_email.cc_emails else None,
+            betreff=geparste_email.betreff,
+            text_inhalt=geparste_email.text_plain,
+            html_inhalt=geparste_email.text_html,
+            gesendet_am=geparste_email.gesendet_am,
+            empfangen_am=datetime.now(),
+            richtung=EmailRichtung.EINGANG,
+            status=EmailStatus.ZUGEORDNET if projekt_id else EmailStatus.NEU,
+            original_dateiname=dateiname,
+            dateigroesse=len(datei_bytes),
+            storage_provider=settings.storage_backend,
+            storage_key=storage_key,
+            importiert_via="DRAG_DROP",
+            hochgeladen_von_user_id=user_id,
+            thread_id=geparste_email.in_reply_to or geparste_email.message_id
+        )
+
+        # Anhänge als JSON speichern
+        if geparste_email.anhaenge:
+            anhaenge_info = []
+            for anh in geparste_email.anhaenge:
+                anhang_key = generate_storage_key(
+                    projekt_id=projekt_id or 0,
+                    kategorie="email_anhaenge",
+                    dateiname=anh.dateiname
+                )
+                try:
+                    storage.put_bytes(anhang_key, anh.daten, anh.content_type)
+                    anhaenge_info.append({
+                        "dateiname": anh.dateiname,
+                        "content_type": anh.content_type,
+                        "groesse": anh.groesse,
+                        "storage_key": anhang_key
+                    })
+                except Exception:
+                    pass
+
+            email_obj.anhaenge = anhaenge_info
+
+        # Priorität erkennen
+        email_obj.prioritaet = self._erkenne_prioritaet(
+            geparste_email.betreff,
+            geparste_email.text_plain
+        )
+
+        # Automatische Zuordnung versuchen
+        if not projekt_id:
+            zuordnung = self._versuche_auto_zuordnung(email_obj)
+            if zuordnung:
+                email_obj.projekt_id = zuordnung['projekt_id']
+                email_obj.auto_zugeordnet = True
+                email_obj.zuordnung_konfidenz = zuordnung['konfidenz']
+                email_obj.zuordnung_grund = zuordnung['grund']
+                email_obj.status = EmailStatus.ZUGEORDNET
+
+        self.db.add(email_obj)
+        self.db.flush()
+
+        return email_obj, ""
+
+    def emails_fuer_projekt_gruppiert(
+        self,
+        projekt_id: int
+    ) -> Dict[str, List['Email']]:
+        """
+        Holt alle Emails für ein Projekt, gruppiert nach Thread.
+
+        Args:
+            projekt_id: ID des Projekts
+
+        Returns:
+            Dict mit thread_id als Key und Liste von Emails als Value
+        """
+        emails = self.db.query(Email).filter(
+            Email.projekt_id == projekt_id
+        ).order_by(
+            Email.gesendet_am.desc()
+        ).all()
+
+        threads = {}
+        for email in emails:
+            thread_id = email.thread_id or email.message_id or str(email.id)
+            if thread_id not in threads:
+                threads[thread_id] = []
+            threads[thread_id].append(email)
+
+        return threads
+
+    def suche_emails(
+        self,
+        projekt_id: Optional[int] = None,
+        suchbegriff: Optional[str] = None,
+        von: Optional[str] = None,
+        an: Optional[str] = None,
+        nur_ungelesen: bool = False,
+        nur_mit_anhaengen: bool = False,
+        von_datum: Optional[datetime] = None,
+        bis_datum: Optional[datetime] = None,
+        limit: int = 50
+    ) -> List['Email']:
+        """
+        Sucht Emails mit verschiedenen Filtern.
+        """
+        query = self.db.query(Email)
+
+        if projekt_id:
+            query = query.filter(Email.projekt_id == projekt_id)
+
+        if suchbegriff:
+            search = f"%{suchbegriff}%"
+            query = query.filter(
+                (Email.betreff.ilike(search)) |
+                (Email.text_inhalt.ilike(search))
+            )
+
+        if von:
+            query = query.filter(Email.von.ilike(f"%{von}%"))
+
+        if an:
+            query = query.filter(Email.an.ilike(f"%{an}%"))
+
+        if nur_ungelesen:
+            query = query.filter(Email.gelesen == False)
+
+        if nur_mit_anhaengen:
+            query = query.filter(Email._anhaenge.isnot(None))
+
+        if von_datum:
+            query = query.filter(Email.gesendet_am >= von_datum)
+
+        if bis_datum:
+            query = query.filter(Email.gesendet_am <= bis_datum)
+
+        return query.order_by(Email.gesendet_am.desc()).limit(limit).all()
 
 
 # Standard-Vorlagen
