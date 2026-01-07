@@ -53,6 +53,7 @@ from src.ui.pages.themes import render_themes
 from src.ui.pages.gutachten_plausibilitaet import render_gutachten_plausibilitaet
 from src.ui.pages.aktenimport import render_aktenimport
 from src.ui.pages.unfallaufnahme import render_unfallaufnahme
+from src.ui.pages.datenschutz import render_datenschutz, render_datenschutz_check_banner
 
 
 # Streamlit-Konfiguration
@@ -212,11 +213,12 @@ def render_sidebar(rolle: str) -> str:
                 menu_button("KI-Analyse")
 
         # ===== SYSTEM =====
-        with st.expander("⚙️ System", expanded=aktuelle_seite in ["Statistik", "Audit-Log", "Signatur", "DSGVO", "Papierkorb", "Admin-Tools", "API-Verwaltung", "Backup", "Mandanten", "Erscheinungsbild"]):
+        with st.expander("⚙️ System", expanded=aktuelle_seite in ["Statistik", "Audit-Log", "Signatur", "DSGVO", "Datenschutz", "Papierkorb", "Admin-Tools", "API-Verwaltung", "Backup", "Mandanten", "Erscheinungsbild"]):
             if rolle in ["ADMIN", "ANWALT"]:
                 menu_button("Statistik")
                 menu_button("Audit-Log")
             menu_button("Signatur")
+            menu_button("Datenschutz")
             if rolle in ["ADMIN", "ANWALT", "WERKSTATT"]:
                 menu_button("DSGVO")
             if rolle in ["ADMIN", "ANWALT", "WERKSTATT", "GUTACHTER"]:
@@ -540,6 +542,9 @@ def render_page(page: str, rolle: str):
 
     elif page == "Erscheinungsbild":
         render_themes()
+
+    elif page == "Datenschutz":
+        render_datenschutz()
 
     else:
         st.warning(f"Seite '{page}' nicht gefunden.")

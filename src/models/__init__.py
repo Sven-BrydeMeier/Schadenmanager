@@ -21,6 +21,7 @@ from src.models.checkliste import ChecklistenItem
 from src.models.signatur import DigitaleSignatur, SignaturAnforderung
 from src.models.unfallaufnahme_beteiligter import UnfallaufnahmeBeteiligter
 from src.models.chat_nachricht import ChatNachricht
+from src.models.datenschutz import DatenschutzZustimmung, AKTUELLE_VERSIONEN
 from src.models.zusatzdaten import (
     TUVDaten, TUVStatus,
     LeasingKreditbank, FinanzierungsTyp,
@@ -112,5 +113,7 @@ __all__ = [
     'TUVDaten', 'TUVStatus',
     'LeasingKreditbank', 'FinanzierungsTyp',
     'PolizeiDienststelle',
-    'Bankverbindung'
+    'Bankverbindung',
+    # Datenschutz
+    'DatenschutzZustimmung', 'AKTUELLE_VERSIONEN'
 ]
