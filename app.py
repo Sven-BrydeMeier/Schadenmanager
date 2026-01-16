@@ -189,7 +189,8 @@ def render_sidebar(rolle: str) -> str:
 
         # ===== RECHTSBEREICH =====
         if rolle in ["ADMIN", "ANWALT"]:
-            with st.expander("⚖️ Rechtsbereich", expanded=aktuelle_seite in ["Ermittlungsakte", "Prozessmodul", "Fallberichte", "Aktenimport"]):
+            with st.expander("⚖️ Rechtsbereich", expanded=aktuelle_seite in ["Ermittlungsakte", "Prozessmodul", "Fallberichte", "Aktenimport", "RA-Micro Import"]):
+                menu_button("RA-Micro Import")
                 menu_button("Aktenimport")
                 menu_button("Ermittlungsakte")
                 menu_button("Prozessmodul")
@@ -503,6 +504,14 @@ def render_page(page: str, rolle: str):
 
     elif page == "Fallberichte":
         render_fallbericht()
+
+    elif page == "RA-Micro Import":
+        if rolle in ["ADMIN", "ANWALT"]:
+            from src.ui.pages.aktenimport import _render_ramicro_import
+            st.title("📁 RA-Micro Aktenimport")
+            _render_ramicro_import()
+        else:
+            st.error("Keine Berechtigung für diese Seite.")
 
     elif page == "Aktenimport":
         if rolle in ["ADMIN", "ANWALT"]:
