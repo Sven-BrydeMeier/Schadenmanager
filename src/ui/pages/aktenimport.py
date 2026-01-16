@@ -496,8 +496,7 @@ def _execute_ramicro_import(db, ergebnis, ziel_projekt_id):
                     unfallprojekt_id=projekt.id,
                     kategorie=kategorie,
                     beschreibung=kp.beschreibung[:200] if kp.beschreibung else f"Import: {kp.kategorie}",
-                    betrag_brutto=kp.betrag,
-                    eingetragen_von_user_id=user_id
+                    betrag_brutto=kp.betrag
                 )
                 db.add(kosten_pos)
                 importierte_kosten += 1
