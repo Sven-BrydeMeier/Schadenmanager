@@ -476,7 +476,13 @@ def _render_letzter_dokumenteneingang(db: Session, projekt: UnfallProjekt):
                 st.caption(f"📅 {letztes_dokument.erstellt_am.strftime('%d.%m.%Y %H:%M')}")
 
         with col3:
-            status_label = "✅ Verarbeitet" if letztes_dokument.ki_verarbeitet else "⏳ Hochgeladen"
+            # Prüfe Status: Geprüft > KI-Verarbeitet > Neu
+            if letztes_dokument.freigabe_erteilt:
+                status_label = "✅ Geprüft"
+            elif letztes_dokument.ki_verarbeitet:
+                status_label = "🤖 KI-Verarbeitet"
+            else:
+                status_label = "🆕 Neu"
             st.caption(status_label)
 
 
@@ -507,15 +513,23 @@ def _render_dokumente_tab(projekt: UnfallProjekt):
     if not projekt.dokumente:
         st.info("Keine Dokumente vorhanden.")
     else:
-        for dok in projekt.dokumente:
+        # Nicht gelöschte Dokumente anzeigen
+        dokumente = [d for d in projekt.dokumente if not d.geloescht]
+
+        for dok in dokumente:
             col1, col2, col3 = st.columns([3, 1, 1])
 
             with col1:
                 st.write(f"**{dok.dokument_typ_anzeige}**: {dok.original_dateiname}")
 
             with col2:
-                status = "Verarbeitet" if dok.ki_verarbeitet else "Hochgeladen"
-                st.write(status)
+                # Status: Geprüft > KI-Verarbeitet > Neu
+                if dok.freigabe_erteilt:
+                    st.markdown("✅ Geprüft")
+                elif dok.ki_verarbeitet:
+                    st.markdown("🤖 KI-Verarbeitet")
+                else:
+                    st.markdown("🆕 Neu")
 
             with col3:
                 if dok.erstellt_am:
