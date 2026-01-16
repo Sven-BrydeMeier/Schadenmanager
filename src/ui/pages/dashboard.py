@@ -134,23 +134,34 @@ def _render_anwalt_dashboard(db: Session, projekte: List[UnfallProjekt], aktives
     st.markdown("## Anwalt-Dashboard")
 
     if not projekte:
-        st.info("Sie haben noch keine zugewiesenen Projekte.")
+        st.info("Sie haben noch keine zugewiesenen Akten.")
         return
 
-    # Projektauswahl
-    projekt_optionen = {p.projektnummer: p for p in projekte}
-    ausgewaehltes = st.selectbox(
-        "Projekt auswählen",
-        list(projekt_optionen.keys()),
+    # Aktenauswahl - mit Aktenzeichen im Format NNN/YY
+    def get_aktenzeichen_label(p):
+        if p.aktenzeichen:
+            return p.aktenzeichen
+        elif p.aktenzeichen_nummer and p.aktenzeichen_jahr:
+            return f"{p.aktenzeichen_nummer}/{str(p.aktenzeichen_jahr)[-2:]}"
+        else:
+            return p.projektnummer
+
+    akte_optionen = {get_aktenzeichen_label(p): p for p in projekte}
+    ausgewaehlte = st.selectbox(
+        "📁 Akte auswählen",
+        list(akte_optionen.keys()),
         index=0 if aktives_projekt else None
     )
 
-    if ausgewaehltes:
-        projekt = projekt_optionen[ausgewaehltes]
+    if ausgewaehlte:
+        projekt = akte_optionen[ausgewaehlte]
         st.session_state["aktives_projekt_id"] = projekt.id
 
-        # Projekt-Header
+        # Akten-Header
         projekt_header(projekt)
+
+        # Letzter Dokumenteneingang anzeigen
+        _render_letzter_dokumenteneingang(db, projekt)
 
         st.markdown("---")
 
@@ -297,16 +308,51 @@ def _render_unfallopfer_dashboard(db: Session, projekte: List[UnfallProjekt], ak
     # Status-Übersicht in einfacher Sprache
     st.markdown("### Aktueller Status")
 
-    # Einfache Fortschrittsanzeige
-    meilensteine_gruen = sum(
+    # Einfache Fortschrittsanzeige - prüfe beide Status-Varianten (GRUEN oder ERLEDIGT)
+    meilensteine_erledigt = sum(
         1 for m in projekt.timeline_meilensteine
-        if m.status == MeilensteinStatus.GRUEN
+        if m.status in [MeilensteinStatus.GRUEN, MeilensteinStatus.ERLEDIGT]
     )
     meilensteine_gesamt = len(projekt.timeline_meilensteine)
 
     if meilensteine_gesamt > 0:
-        fortschritt = int((meilensteine_gruen / meilensteine_gesamt) * 100)
+        fortschritt = int((meilensteine_erledigt / meilensteine_gesamt) * 100)
         st.progress(fortschritt / 100, text=f"Fortschritt: {fortschritt}%")
+
+    st.markdown("---")
+
+    # Regulierungsstand und letzter Dokumenteneingang
+    st.markdown("### Regulierung")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        # Status der Regulierung
+        gesamt_gefordert = sum(kp.betrag_brutto or 0 for kp in projekt.kostenpositionen)
+        gesamt_erstattet = sum(kp.bezahlt_betrag or 0 for kp in projekt.kostenpositionen)
+        noch_offen = gesamt_gefordert - gesamt_erstattet
+
+        if gesamt_gefordert > 0:
+            regulierung_prozent = int((gesamt_erstattet / gesamt_gefordert) * 100)
+            st.metric("Regulierungsstand", f"{regulierung_prozent}%")
+        else:
+            st.metric("Regulierungsstand", "Ausstehend")
+
+    with col2:
+        # Letzter Dokumenteneingang
+        letztes_dokument = db.query(Dokument).filter(
+            Dokument.unfallprojekt_id == projekt.id,
+            Dokument.geloescht == False
+        ).order_by(Dokument.erstellt_am.desc()).first()
+
+        if letztes_dokument and letztes_dokument.erstellt_am:
+            st.metric(
+                "Letzter Dokumenteneingang",
+                letztes_dokument.erstellt_am.strftime('%d.%m.%Y'),
+                letztes_dokument.dokument_typ_anzeige
+            )
+        else:
+            st.metric("Letzter Dokumenteneingang", "Keine Dokumente")
 
     st.markdown("---")
 
@@ -408,6 +454,30 @@ def _render_versicherung_dashboard(db: Session, projekte: List[UnfallProjekt], a
                             st.session_state["aktives_projekt_id"] = projekt.id
                             st.session_state["page"] = "Kosten"
                             st.rerun()
+
+
+def _render_letzter_dokumenteneingang(db: Session, projekt: UnfallProjekt):
+    """Zeigt den letzten Dokumenteneingang für eine Akte an"""
+    # Letztes Dokument laden
+    letztes_dokument = db.query(Dokument).filter(
+        Dokument.unfallprojekt_id == projekt.id,
+        Dokument.geloescht == False
+    ).order_by(Dokument.erstellt_am.desc()).first()
+
+    if letztes_dokument:
+        st.markdown("### 📥 Letzter Dokumenteneingang")
+        col1, col2, col3 = st.columns([2, 1, 1])
+
+        with col1:
+            st.markdown(f"**{letztes_dokument.dokument_typ_anzeige}**: {letztes_dokument.original_dateiname}")
+
+        with col2:
+            if letztes_dokument.erstellt_am:
+                st.caption(f"📅 {letztes_dokument.erstellt_am.strftime('%d.%m.%Y %H:%M')}")
+
+        with col3:
+            status_label = "✅ Verarbeitet" if letztes_dokument.ki_verarbeitet else "⏳ Hochgeladen"
+            st.caption(status_label)
 
 
 def _render_kosten_tab(projekt: UnfallProjekt):

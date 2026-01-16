@@ -225,43 +225,58 @@ def _render_dokumente(db: Session, projekt: UnfallProjekt):
 
     st.markdown("### Dokumente")
 
-    # Dokumente laden (nur freigegebene für Mandanten sichtbar)
+    user_id = st.session_state.get("user_id")
+
+    # Dokumente laden - freigegebene oder vom Mandanten selbst hochgeladene
     dokumente = db.query(Dokument).filter(
         Dokument.unfallprojekt_id == projekt.id,
-        Dokument.freigabe_erteilt == True  # Nur freigegebene Dokumente
+        Dokument.geloescht == False,
+        # Zeige freigegebene ODER vom Mandanten hochgeladene Dokumente
+        ((Dokument.freigabe_erteilt == True) | (Dokument.hochgeladen_von_user_id == user_id))
     ).order_by(Dokument.erstellt_am.desc()).all()
 
     if not dokumente:
-        st.info("Es wurden noch keine Dokumente für Sie freigegeben.")
-        return
+        st.info("Es wurden noch keine Dokumente hochgeladen oder für Sie freigegeben.")
+    else:
+        # Dokumente nach Typ gruppieren
+        dok_typen = {}
+        for dok in dokumente:
+            typ = dok.dokument_typ_anzeige
+            if typ not in dok_typen:
+                dok_typen[typ] = []
+            dok_typen[typ].append(dok)
 
-    # Dokumente nach Typ gruppieren
-    dok_typen = {}
-    for dok in dokumente:
-        typ = dok.dokument_typ_anzeige
-        if typ not in dok_typen:
-            dok_typen[typ] = []
-        dok_typen[typ].append(dok)
+        for typ, doks in dok_typen.items():
+            with st.expander(f"{typ} ({len(doks)})", expanded=True):
+                for dok in doks:
+                    col1, col2, col3 = st.columns([3, 1, 1])
 
-    for typ, doks in dok_typen.items():
-        with st.expander(f"{typ} ({len(doks)})", expanded=True):
-            for dok in doks:
-                col1, col2, col3 = st.columns([3, 1, 1])
+                    with col1:
+                        st.markdown(f"**{dok.original_dateiname}**")
+                        st.caption(f"Hochgeladen: {dok.erstellt_am.strftime('%d.%m.%Y') if dok.erstellt_am else 'Unbekannt'}")
 
-                with col1:
-                    st.markdown(f"**{dok.original_dateiname}**")
-                    st.caption(f"Hochgeladen: {dok.erstellt_am.strftime('%d.%m.%Y') if dok.erstellt_am else 'Unbekannt'}")
+                    with col2:
+                        # Status anzeigen
+                        if dok.hochgeladen_von_user_id == user_id and not dok.freigabe_erteilt:
+                            st.caption("⏳ Wird geprüft")
+                        elif dok.freigabe_erteilt:
+                            st.caption("✅ Freigegeben")
 
-                with col2:
-                    if dok.dateipfad:
-                        st.download_button(
-                            "Herunterladen",
-                            data=open(dok.dateipfad, "rb").read() if dok.dateipfad else b"",
-                            file_name=dok.original_dateiname,
-                            key=f"dl_{dok.id}"
-                        )
+                    with col3:
+                        # Download mit Storage-Abstraktion
+                        try:
+                            file_bytes = dok.get_bytes()
+                            if file_bytes:
+                                st.download_button(
+                                    "📥 Download",
+                                    data=file_bytes,
+                                    file_name=dok.original_dateiname,
+                                    key=f"dl_{dok.id}"
+                                )
+                        except Exception:
+                            st.caption("Nicht verfügbar")
 
-                st.markdown("---")
+                    st.markdown("---")
 
     # Upload-Bereich für Mandanten
     st.markdown("### Dokument hochladen")
@@ -274,15 +289,61 @@ def _render_dokumente(db: Session, projekt: UnfallProjekt):
     )
 
     if uploaded_file:
-        dokument_typ = st.selectbox(
+        from src.models.enums import DokumentTyp
+
+        typ_mapping = {
+            "Vollmacht": DokumentTyp.VOLLMACHT,
+            "Personalausweis": DokumentTyp.PERSONALAUSWEIS,
+            "Fahrzeugschein": DokumentTyp.FAHRZEUGSCHEIN,
+            "Sonstiges": DokumentTyp.SONSTIG
+        }
+
+        dokument_typ_str = st.selectbox(
             "Dokumenttyp",
-            ["Vollmacht", "Personalausweis", "Fahrzeugschein", "Sonstiges"]
+            list(typ_mapping.keys())
         )
 
         if st.button("Hochladen", type="primary"):
-            # Hier würde die Upload-Logik implementiert
-            st.success("Dokument erfolgreich hochgeladen!")
-            st.info("Das Dokument wird geprüft und erscheint dann in der Übersicht.")
+            try:
+                import os
+                from datetime import datetime
+
+                # Speicherpfad erstellen
+                upload_dir = f"uploads/mandanten/{projekt.id}"
+                os.makedirs(upload_dir, exist_ok=True)
+
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                dateiname = f"{timestamp}_{uploaded_file.name}"
+                dateipfad = os.path.join(upload_dir, dateiname)
+
+                # Datei speichern
+                with open(dateipfad, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+
+                # Dokument in DB erstellen
+                neues_dokument = Dokument(
+                    unfallprojekt_id=projekt.id,
+                    hochgeladen_von_user_id=user_id,
+                    dokument_typ=typ_mapping[dokument_typ_str],
+                    original_dateiname=uploaded_file.name,
+                    dateipfad=dateipfad,
+                    mime_typ=uploaded_file.type,
+                    dateigroesse=uploaded_file.size,
+                    storage_provider="local",
+                    storage_key=dateipfad,
+                    freigabe_erforderlich=True,
+                    freigabe_erteilt=False,
+                    status="HOCHGELADEN"
+                )
+                db.add(neues_dokument)
+                db.commit()
+
+                st.success("Dokument erfolgreich hochgeladen!")
+                st.info("Das Dokument wird geprüft und ist dann in der Übersicht sichtbar.")
+                st.rerun()
+
+            except Exception as e:
+                st.error(f"Fehler beim Hochladen: {str(e)}")
 
 
 def _render_kosten_uebersicht(db: Session, projekt: UnfallProjekt):

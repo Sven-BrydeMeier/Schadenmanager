@@ -109,7 +109,7 @@ def _render_projekt_auswahl(user_rolle: Rollen, user_id: int):
             with st.expander("📋 Akten-Details", expanded=False):
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("Status", projekt.status.value if projekt.status else "Offen")
+                    st.metric("Status", projekt.status_anzeige if hasattr(projekt, 'status_anzeige') else (projekt.status or "Offen"))
                 with col2:
                     docs_count = len(projekt.dokumente) if projekt.dokumente else 0
                     st.metric("Dokumente", docs_count)
