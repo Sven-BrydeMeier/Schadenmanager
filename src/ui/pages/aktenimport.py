@@ -393,6 +393,7 @@ def _execute_ramicro_import(db, ergebnis, ziel_projekt_id):
     with st.spinner("Importiere RA-Micro Akte..."):
         try:
             user_id = st.session_state.get("user_id", 1)
+            user_rolle = st.session_state.get("user_rolle", "")
 
             # Projekt erstellen oder laden
             if ziel_projekt_id == "NEU" or ziel_projekt_id == "NEU_MIT_AZ":
@@ -408,6 +409,21 @@ def _execute_ramicro_import(db, ergebnis, ziel_projekt_id):
                     status="IN_BEARBEITUNG",
                     angelegt_von_user_id=user_id
                 )
+
+                # Rollenspezifische User-ID setzen, damit Projekt in Liste erscheint
+                if user_rolle == "ANWALT":
+                    projekt.anwalt_user_id = user_id
+                elif user_rolle == "WERKSTATT":
+                    projekt.werkstatt_user_id = user_id
+                elif user_rolle == "GUTACHTER":
+                    projekt.gutachter_user_id = user_id
+                elif user_rolle == "UNFALLOPFER":
+                    projekt.unfallopfer_user_id = user_id
+                elif user_rolle == "VERSICHERUNG_EIGEN":
+                    projekt.versicherung_eigen_user_id = user_id
+                elif user_rolle == "VERSICHERUNG_GEGNER":
+                    projekt.versicherung_gegner_user_id = user_id
+
                 db.add(projekt)
                 db.flush()
 
@@ -728,12 +744,31 @@ def _render_import_wizard():
                     from src.models import UnfallProjekt
                     import uuid
 
+                    user_id = st.session_state.get("user_id", 1)
+                    user_rolle = st.session_state.get("user_rolle", "")
+
                     # Projektnummer generieren
                     projektnummer = f"P-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:4].upper()}"
 
                     neues_projekt = UnfallProjekt(
-                        projektnummer=projektnummer
+                        projektnummer=projektnummer,
+                        angelegt_von_user_id=user_id
                     )
+
+                    # Rollenspezifische User-ID setzen
+                    if user_rolle == "ANWALT":
+                        neues_projekt.anwalt_user_id = user_id
+                    elif user_rolle == "WERKSTATT":
+                        neues_projekt.werkstatt_user_id = user_id
+                    elif user_rolle == "GUTACHTER":
+                        neues_projekt.gutachter_user_id = user_id
+                    elif user_rolle == "UNFALLOPFER":
+                        neues_projekt.unfallopfer_user_id = user_id
+                    elif user_rolle == "VERSICHERUNG_EIGEN":
+                        neues_projekt.versicherung_eigen_user_id = user_id
+                    elif user_rolle == "VERSICHERUNG_GEGNER":
+                        neues_projekt.versicherung_gegner_user_id = user_id
+
                     db.add(neues_projekt)
                     db.flush()
 
@@ -764,6 +799,9 @@ def _render_import_wizard():
 
                         if akten_import.import_abgeschlossen:
                             st.success("Import erfolgreich!")
+
+                            # Projekt als aktives Projekt setzen
+                            st.session_state["aktives_projekt_id"] = projekt_id
 
                             # Ergebnis anzeigen
                             _zeige_import_ergebnis(akten_import)
