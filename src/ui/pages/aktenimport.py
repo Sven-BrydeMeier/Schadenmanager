@@ -503,6 +503,9 @@ def _execute_ramicro_import(db, ergebnis, ziel_projekt_id):
 
             db.commit()
 
+            # Projekt als aktives Projekt setzen für Dokumentenmanagement
+            st.session_state["aktives_projekt_id"] = projekt.id
+
             # Session State leeren
             for key in ['ramicro_ergebnis', 'ramicro_pdf_bytes', 'ramicro_filename']:
                 if key in st.session_state:
@@ -511,19 +514,57 @@ def _execute_ramicro_import(db, ergebnis, ziel_projekt_id):
             st.success(f"""
             ✅ **Import erfolgreich!**
 
-            - Akte: {projekt.aktenzeichen or projekt.projektnummer}
-            - {len(ergebnis.beteiligte)} Beteiligte erkannt
-            - {importierte_kosten} Kostenpositionen importiert
-            - {len(ergebnis.dokument_segmente)} Dokumentsegmente erkannt
+            - **Akte:** {projekt.aktenzeichen or projekt.projektnummer}
+            - **Aktenzeichen:** {projekt.aktenzeichen or 'Nicht gesetzt'}
+            - **{len(ergebnis.beteiligte)} Beteiligte** erkannt
+            - **{importierte_kosten} Kostenpositionen** importiert
+            - **{len(ergebnis.dokument_segmente)} Dokumentsegmente** erkannt
+
+            Die Akte wurde als aktives Projekt gesetzt. Sie können nun im
+            **Dokumentenmanagement** die importierten Dokumente einsehen.
             """)
 
-            # Beteiligte anzeigen
+            # Beteiligte detailliert anzeigen
             if beteiligte_info:
-                with st.expander("📋 Erkannte Beteiligte (zur manuellen Anlage)"):
-                    for info in beteiligte_info:
-                        st.write(f"**{info['typ']}:** {info['firma'] or info['name']}")
+                st.markdown("---")
+                st.markdown("### 📋 Erkannte Beteiligte")
+                for info in beteiligte_info:
+                    typ_icons = {
+                        "MANDANT": "👤",
+                        "UNFALLGEGNER": "🚗",
+                        "VERSICHERUNG_GEGNER": "🏢",
+                        "VERSICHERUNG_EIGEN": "🏠",
+                        "WERKSTATT": "🔧",
+                        "GUTACHTER": "📋"
+                    }
+                    icon = typ_icons.get(info['typ'], "👤")
+                    with st.expander(f"{icon} **{info['typ']}**: {info['firma'] or info['name'] or 'Unbekannt'}"):
+                        if info['name']:
+                            st.write(f"**Name:** {info['name']}")
+                        if info['firma']:
+                            st.write(f"**Firma:** {info['firma']}")
+                        if info['adresse']:
+                            st.write(f"**Adresse:** {info['adresse']}")
+                        if info['telefon']:
+                            st.write(f"**Telefon:** {', '.join(info['telefon'])}")
                         if info['email']:
-                            st.write(f"  E-Mail: {', '.join(info['email'])}")
+                            st.write(f"**E-Mail:** {', '.join(info['email'])}")
+                        if info['kennzeichen']:
+                            st.write(f"**Kennzeichen:** {info['kennzeichen']}")
+                        if info['versicherungsnummer']:
+                            st.write(f"**Vers.-Nr.:** {info['versicherungsnummer']}")
+
+            # Button um zur Dokumentenverwaltung zu gehen
+            st.markdown("---")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("📄 Zur Dokumentenverwaltung", use_container_width=True):
+                    st.session_state["page"] = "Dokumente"
+                    st.rerun()
+            with col2:
+                if st.button("📁 Zur Aktenübersicht", use_container_width=True):
+                    st.session_state["page"] = "Projekte"
+                    st.rerun()
 
         except Exception as e:
             db.rollback()

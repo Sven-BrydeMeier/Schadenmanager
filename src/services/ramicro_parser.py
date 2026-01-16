@@ -477,45 +477,113 @@ class RAMicroParser:
     def _extract_parties(self, cover_text: str, ergebnis: RAMicroAkteErgebnis):
         """Extrahiert Beteiligte aus dem Aktenvorblatt"""
 
-        # Mandant/Auftraggeber Block
-        mandant_block = _extract_block(
-            cover_text,
-            "AUFTRAGGEBER:",
-            end_labels=["GEGNERVERTRETER:", "GEGNER:", "VERSICHERUNG:"]
-        ) or _extract_block(
-            cover_text,
-            "MANDANT:",
-            end_labels=["GEGNER:", "VERSICHERUNG:"]
-        )
+        # Verschiedene Label-Varianten für Mandant
+        mandant_labels = [
+            "AUFTRAGGEBER:", "AUFTRAGGEBER", "MANDANT:", "MANDANT",
+            "GESCHÄDIGTER:", "GESCHÄDIGTER", "GESCHAEDIGTER:", "GESCHAEDIGTER",
+            "KLÄGER:", "KLÄGER", "KLAEGER:", "KLAEGER",
+            "ANTRAGSTELLER:", "ANTRAGSTELLER"
+        ]
+
+        mandant_block = None
+        for label in mandant_labels:
+            mandant_block = _extract_block(
+                cover_text,
+                label,
+                end_labels=["GEGNERVERTRETER:", "GEGNER:", "VERSICHERUNG:", "UNFALLGEGNER:",
+                           "SCHÄDIGER:", "SCHAEDIGER:", "BEKLAGTER:", "ANTRAGSGEGNER:"]
+            )
+            if mandant_block and len(mandant_block) > 20:
+                break
 
         if mandant_block:
             beteiligter = self._parse_party_block(mandant_block, BeteiligterTyp.MANDANT)
             if beteiligter:
                 ergebnis.beteiligte.append(beteiligter)
 
-        # Gegner Block
-        gegner_block = _extract_block(
-            cover_text,
-            "GEGNER:",
-            end_labels=["GEGNERVERTRETER:", "GEGENSTANDSWERT:", "VERSICHERUNG:", "RECHTSSCHUTZ:", "TERMINE:"]
-        )
+        # Verschiedene Label-Varianten für Gegner
+        gegner_labels = [
+            "GEGNER:", "GEGNER", "UNFALLGEGNER:", "UNFALLGEGNER",
+            "SCHÄDIGER:", "SCHÄDIGER", "SCHAEDIGER:", "SCHAEDIGER",
+            "BEKLAGTER:", "BEKLAGTER", "ANTRAGSGEGNER:", "ANTRAGSGEGNER",
+            "UNFALLVERURSACHER:", "UNFALLVERURSACHER"
+        ]
+
+        gegner_block = None
+        for label in gegner_labels:
+            gegner_block = _extract_block(
+                cover_text,
+                label,
+                end_labels=["GEGNERVERTRETER:", "GEGENSTANDSWERT:", "VERSICHERUNG:",
+                           "RECHTSSCHUTZ:", "TERMINE:", "FRISTEN:", "HAFTPFLICHT:",
+                           "GEGNERISCHE VERSICHERUNG:", "KFZHAFTPFLICHT:"]
+            )
+            if gegner_block and len(gegner_block) > 10:
+                break
 
         if gegner_block:
             beteiligter = self._parse_party_block(gegner_block, BeteiligterTyp.UNFALLGEGNER)
             if beteiligter:
                 ergebnis.beteiligte.append(beteiligter)
 
-        # Versicherung Gegner
-        vers_block = _extract_block(
-            cover_text,
-            "VERSICHERUNG:",
-            end_labels=["RECHTSSCHUTZ:", "TERMINE:", "FRISTEN:", "GEGENSTANDSWERT:"]
-        )
+        # Verschiedene Label-Varianten für Versicherung
+        vers_labels = [
+            "VERSICHERUNG:", "VERSICHERUNG", "GEGNERISCHE VERSICHERUNG:",
+            "HAFTPFLICHTVERSICHERUNG:", "HAFTPFLICHT:", "KFZ-HAFTPFLICHT:",
+            "KFZHAFTPFLICHT:", "VERS.:", "VERS:"
+        ]
+
+        vers_block = None
+        for label in vers_labels:
+            vers_block = _extract_block(
+                cover_text,
+                label,
+                end_labels=["RECHTSSCHUTZ:", "TERMINE:", "FRISTEN:", "GEGENSTANDSWERT:",
+                           "SACHBEARBEITER:", "SCHADENNUMMER:", "AKTENZEICHEN:"]
+            )
+            if vers_block and len(vers_block) > 10:
+                break
 
         if vers_block:
             beteiligter = self._parse_party_block(vers_block, BeteiligterTyp.VERSICHERUNG_GEGNER)
             if beteiligter:
                 ergebnis.beteiligte.append(beteiligter)
+
+        # Fallback: Suche nach bekannten Versicherungsnamen im Text
+        if not any(b.typ == BeteiligterTyp.VERSICHERUNG_GEGNER for b in ergebnis.beteiligte):
+            versicherungen = self._find_insurance_names(cover_text)
+            if versicherungen:
+                for vers_name in versicherungen[:1]:  # Nur erste gefundene
+                    ergebnis.beteiligte.append(Beteiligter(
+                        typ=BeteiligterTyp.VERSICHERUNG_GEGNER,
+                        firma=vers_name,
+                        raw_text=vers_name
+                    ))
+
+    def _find_insurance_names(self, text: str) -> List[str]:
+        """Sucht nach bekannten Versicherungsnamen im Text"""
+        bekannte_versicherungen = [
+            "Allianz", "HUK-COBURG", "HUK COBURG", "DEVK", "AXA", "Generali",
+            "ERGO", "Zurich", "HDI", "VHV", "LVM", "R+V", "Provinzial",
+            "Württembergische", "Debeka", "Gothaer", "Nürnberger", "Cosmos",
+            "Signal Iduna", "ADAC", "Arag", "Roland", "DA Direkt", "CosmosDirekt",
+            "Verti", "Friday", "Kravag", "Itzehoer", "WGV", "Sparkassen"
+        ]
+
+        gefunden = []
+        text_lower = text.lower()
+
+        for vers in bekannte_versicherungen:
+            if vers.lower() in text_lower:
+                # Versuche vollständigen Namen zu finden
+                pattern = re.compile(rf"({re.escape(vers)}[A-Za-zÄÖÜäöüß\s\-]*(?:Versicherung|AG|SE)?)", re.IGNORECASE)
+                match = pattern.search(text)
+                if match:
+                    gefunden.append(match.group(1).strip())
+                else:
+                    gefunden.append(vers)
+
+        return gefunden
 
     def _parse_party_block(self, block: str, typ: BeteiligterTyp) -> Optional[Beteiligter]:
         """Parst einen Beteiligten-Block"""
