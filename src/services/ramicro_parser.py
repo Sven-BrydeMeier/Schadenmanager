@@ -225,7 +225,17 @@ def _extract_name_from_block(block: str) -> Tuple[Optional[str], Optional[str], 
     skip_patterns = [
         "adressnr", "tel", "fax", "e-mail", "email", "mobil", "iban",
         "vers.-nr", "vers.nr", "schadennr", "schaden-nr", "aktenzeichen",
-        "sachbearbeiter", "az:", "az.", "plz", "straße", "str."
+        "sachbearbeiter", "az:", "az.", "plz", "straße", "str.",
+        # Bankdaten überspringen
+        "blz", "blz:", "kontonr", "konto-nr", "konto nr", "bankverbindung",
+        "bic", "bic:", "swift"
+    ]
+
+    # Bank-Keywords - diese Zeilen komplett überspringen (sind keine Personennamen)
+    bank_keywords = [
+        "sparkasse", "volksbank", "raiffeisenbank", "commerzbank", "deutsche bank",
+        "postbank", "ing-diba", "ing diba", "targobank", "sparda", "psd bank",
+        "dkb", "comdirect", "n26", "santander", "hypovereinsbank", "unicredit"
     ]
 
     # PLZ-Pattern zum Erkennen von Adresszeilen
@@ -238,6 +248,10 @@ def _extract_name_from_block(block: str) -> Tuple[Optional[str], Optional[str], 
         if any(skip in line_lower for skip in skip_patterns):
             continue
 
+        # Überspringe Bankzeilen (sind keine Personennamen)
+        if any(bank in line_lower for bank in bank_keywords):
+            continue
+
         # Überspringe Adresszeilen (beginnen mit PLZ)
         if plz_pattern.match(line):
             continue
@@ -246,8 +260,11 @@ def _extract_name_from_block(block: str) -> Tuple[Optional[str], Optional[str], 
         if re.match(r'^[\d\s/\-\.]+$', line):
             continue
 
-        # Firma-Keywords
+        # Firma-Keywords (aber keine Banken)
         if any(kw in line for kw in ["GmbH", "mbH", "AG", "KG", "OHG", "e.K.", "UG", "e.V.", "SE"]):
+            # Prüfe ob es eine Bank ist - dann überspringen
+            if any(bank in line_lower for bank in bank_keywords):
+                continue
             firma = line.split(" Tel")[0].split(" Fax")[0].strip(" :")
             continue
 
