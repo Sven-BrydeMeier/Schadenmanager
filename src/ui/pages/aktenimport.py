@@ -469,11 +469,12 @@ def _execute_ramicro_import(db, ergebnis, ziel_projekt_id):
             kategorie_mapping = {
                 "REPARATUR": KostenKategorie.REPARATUR,
                 "GUTACHTEN": KostenKategorie.GUTACHTEN,
-                "MIETWAGEN": KostenKategorie.MIETWAGEN,
+                "MIETWAGEN": KostenKategorie.ERSATZWAGEN,  # MIETWAGEN -> ERSATZWAGEN
                 "NUTZUNGSAUSFALL": KostenKategorie.NUTZUNGSAUSFALL,
                 "WERTMINDERUNG": KostenKategorie.WERTMINDERUNG,
-                "ABSCHLEPPEN": KostenKategorie.ABSCHLEPPEN,
-                "KOSTENPAUSCHALE": KostenKategorie.KOSTENPAUSCHALE,
+                "ABSCHLEPPEN": KostenKategorie.SONSTIG,  # Kein ABSCHLEPPEN-Typ vorhanden
+                "KOSTENPAUSCHALE": KostenKategorie.SONSTIG,  # Kein KOSTENPAUSCHALE-Typ
+                "RECHTSANWALT": KostenKategorie.RA_GEBUEHREN,
             }
 
             # Nur eindeutige Beträge importieren (Duplikate vermeiden)
