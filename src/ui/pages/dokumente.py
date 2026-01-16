@@ -155,14 +155,16 @@ def _speichere_dokument(
         dateigroesse=uploaded_file.size,
         beschreibung=beschreibung,
         status="HOCHGELADEN",
+        storage_provider="local",
+        storage_key=dateipfad,
         freigabe_erforderlich=True,
         freigabe_erteilt=False
     )
 
     db.add(dokument)
-    db.flush()
+    db.commit()  # Explizit committen BEVOR st.rerun() aufgerufen werden kann
 
-    # Automatische OCR-Verarbeitung starten
+    # Automatische OCR-Verarbeitung starten (nach Commit)
     _starte_ocr_verarbeitung(db, dokument)
 
     return True

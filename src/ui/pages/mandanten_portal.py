@@ -336,14 +336,19 @@ def _render_dokumente(db: Session, projekt: UnfallProjekt):
                     status="HOCHGELADEN"
                 )
                 db.add(neues_dokument)
-                db.commit()
+                db.commit()  # Explizit committen
 
                 st.success("Dokument erfolgreich hochgeladen!")
                 st.info("Das Dokument wird geprüft und ist dann in der Übersicht sichtbar.")
-                st.rerun()
+                st.session_state["upload_success"] = True
 
             except Exception as e:
                 st.error(f"Fehler beim Hochladen: {str(e)}")
+
+    # Rerun außerhalb des try-Blocks um DB-Commit nicht zu unterbrechen
+    if st.session_state.get("upload_success"):
+        st.session_state["upload_success"] = False
+        st.rerun()
 
 
 def _render_kosten_uebersicht(db: Session, projekt: UnfallProjekt):

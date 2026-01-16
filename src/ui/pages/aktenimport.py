@@ -133,28 +133,403 @@ def render_aktenimport():
     """)
 
     # Tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "Neue Akte importieren",
-        "Importierte Akten",
-        "Beteiligte & Einladungen",
-        "Dokumentfreigaben",
-        "Fortschritt"
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "📁 RA-Micro Import",
+        "📄 Standard Import",
+        "📋 Importierte Akten",
+        "👥 Beteiligte & Einladungen",
+        "🔓 Dokumentfreigaben",
+        "📊 Fortschritt"
     ])
 
     with tab1:
-        _render_import_wizard()
+        _render_ramicro_import()
 
     with tab2:
-        _render_importierte_akten()
+        _render_import_wizard()
 
     with tab3:
-        _render_beteiligte_einladungen()
+        _render_importierte_akten()
 
     with tab4:
-        _render_dokumentfreigaben()
+        _render_beteiligte_einladungen()
 
     with tab5:
+        _render_dokumentfreigaben()
+
+    with tab6:
         _render_fortschritt()
+
+
+def _render_ramicro_import():
+    """RA-Micro Aktengestalter Import"""
+    st.subheader("📁 RA-Micro Aktengestalter Import")
+
+    st.info("""
+    **Spezieller Import für RA-Micro Aktengestalter PDFs:**
+    - Automatische Erkennung des Aktenvorblatt
+    - Extraktion von Beteiligten (Mandant, Gegner, Versicherung)
+    - Erkennung von Schadenskosten und Kostenpositionen
+    - Dokumententrennung anhand von PDF-Lesezeichen
+    - Aktenzeichen im Format NNN/YY wird automatisch übernommen
+    """)
+
+    with get_session() as db:
+        # Schritt 1: PDF hochladen
+        st.markdown("### 1. RA-Micro PDF hochladen")
+
+        uploaded_file = st.file_uploader(
+            "RA-Micro PDF-Akte auswählen",
+            type=["pdf"],
+            help="Laden Sie die aus RA-Micro exportierte PDF hoch",
+            key="ramicro_upload"
+        )
+
+        if uploaded_file:
+            st.success(f"Datei: {uploaded_file.name} ({uploaded_file.size / 1024:.1f} KB)")
+
+            # Analysieren-Button
+            if st.button("📊 RA-Micro Akte analysieren", type="primary", use_container_width=True):
+                with st.spinner("Analysiere RA-Micro PDF..."):
+                    try:
+                        from src.services.ramicro_parser import RAMicroParser
+
+                        pdf_bytes = uploaded_file.read()
+                        uploaded_file.seek(0)
+
+                        parser = RAMicroParser()
+                        ergebnis = parser.parse(pdf_bytes, uploaded_file.name)
+
+                        st.session_state['ramicro_ergebnis'] = ergebnis
+                        st.session_state['ramicro_pdf_bytes'] = pdf_bytes
+                        st.session_state['ramicro_filename'] = uploaded_file.name
+
+                    except Exception as e:
+                        st.error(f"Fehler bei der Analyse: {str(e)}")
+
+            # Ergebnis anzeigen
+            if 'ramicro_ergebnis' in st.session_state:
+                ergebnis = st.session_state['ramicro_ergebnis']
+
+                st.markdown("---")
+                st.markdown("### 2. Analyse-Ergebnis")
+
+                # Fehler anzeigen
+                if ergebnis.fehler:
+                    for fehler in ergebnis.fehler:
+                        st.warning(f"Hinweis: {fehler}")
+
+                # Metriken
+                col1, col2, col3, col4 = st.columns(4)
+
+                with col1:
+                    st.metric("Seiten", ergebnis.seitenzahl)
+                with col2:
+                    st.metric("Dokumente", len(ergebnis.dokument_segmente))
+                with col3:
+                    st.metric("Beteiligte", len(ergebnis.beteiligte))
+                with col4:
+                    if ergebnis.gegenstandswert:
+                        st.metric("Gegenstandswert", f"{ergebnis.gegenstandswert:,.2f} €")
+                    else:
+                        st.metric("Gegenstandswert", "-")
+
+                # Aktenzeichen
+                if ergebnis.aktenzeichen:
+                    st.success(f"📋 Erkanntes Aktenzeichen: **{ergebnis.aktenzeichen}**")
+
+                if ergebnis.kurzbezeichnung:
+                    st.info(f"Kurzbezeichnung: {ergebnis.kurzbezeichnung}")
+
+                # Unfalldaten
+                if ergebnis.unfalldatum or ergebnis.unfallort:
+                    st.markdown("#### Unfalldaten")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if ergebnis.unfalldatum:
+                            st.write(f"**Unfalldatum:** {ergebnis.unfalldatum.strftime('%d.%m.%Y')}")
+                    with col2:
+                        if ergebnis.unfallort:
+                            st.write(f"**Unfallort:** {ergebnis.unfallort}")
+
+                # Beteiligte
+                if ergebnis.beteiligte:
+                    st.markdown("#### Erkannte Beteiligte")
+
+                    for bet in ergebnis.beteiligte:
+                        with st.expander(f"👤 {bet.typ.value}: {bet.firma or bet.name or 'Unbekannt'}"):
+                            col1, col2 = st.columns(2)
+
+                            with col1:
+                                if bet.firma:
+                                    st.write(f"**Firma:** {bet.firma}")
+                                if bet.name:
+                                    st.write(f"**Name:** {bet.vorname or ''} {bet.name}")
+                                if bet.strasse:
+                                    st.write(f"**Adresse:** {bet.strasse}")
+                                if bet.plz and bet.ort:
+                                    st.write(f"**PLZ/Ort:** {bet.plz} {bet.ort}")
+
+                            with col2:
+                                if bet.telefon:
+                                    st.write(f"**Telefon:** {', '.join(bet.telefon)}")
+                                if bet.email:
+                                    st.write(f"**E-Mail:** {', '.join(bet.email)}")
+                                if bet.kennzeichen:
+                                    st.write(f"**Kennzeichen:** {bet.kennzeichen}")
+                                if bet.versicherungsnummer:
+                                    st.write(f"**Vers.-Nr.:** {bet.versicherungsnummer}")
+                                if bet.iban:
+                                    st.write(f"**IBAN:** {bet.iban}")
+
+                # Dokumentstruktur
+                if ergebnis.dokument_segmente:
+                    st.markdown("#### Dokumentstruktur (aus Lesezeichen)")
+
+                    for seg in ergebnis.dokument_segmente:
+                        seiten = f"S. {seg.start_seite}"
+                        if seg.end_seite != seg.start_seite:
+                            seiten = f"S. {seg.start_seite}-{seg.end_seite}"
+
+                        typ_icon = {
+                            "GUTACHTEN": "📋",
+                            "RECHNUNG": "🧾",
+                            "VOLLMACHT": "📝",
+                            "AKTENVORBLATT": "📁",
+                            "FOTOS": "📷",
+                            "POLIZEIBERICHT": "🚔",
+                        }.get(seg.typ, "📄")
+
+                        st.write(f"{typ_icon} **{seg.titel}** ({seiten}) - {seg.typ or 'SONSTIG'}")
+
+                # Kostenpositionen
+                if ergebnis.kostenpositionen:
+                    st.markdown("#### Erkannte Kostenpositionen")
+
+                    # Gruppieren nach Kategorie
+                    kosten_gruppen = {}
+                    for kp in ergebnis.kostenpositionen:
+                        if kp.kategorie not in kosten_gruppen:
+                            kosten_gruppen[kp.kategorie] = []
+                        kosten_gruppen[kp.kategorie].append(kp)
+
+                    for kategorie, positionen in kosten_gruppen.items():
+                        summe = sum(p.betrag for p in positionen)
+                        with st.expander(f"💰 {kategorie}: {summe:,.2f} € ({len(positionen)} Positionen)"):
+                            for pos in positionen[:5]:  # Max 5 pro Kategorie anzeigen
+                                st.write(f"• {pos.betrag:,.2f} € - {pos.beschreibung[:50]}...")
+
+                st.markdown("---")
+
+                # Schritt 3: Import-Optionen
+                st.markdown("### 3. Import durchführen")
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    import_option = st.radio(
+                        "Akte importieren in:",
+                        ["Neue Akte erstellen", "Bestehende Akte auswählen", "Aktenzeichen aus PDF verwenden"],
+                        key="ramicro_import_option"
+                    )
+
+                with col2:
+                    if import_option == "Bestehende Akte auswählen":
+                        from src.models import UnfallProjekt
+
+                        projekte = db.query(UnfallProjekt).order_by(
+                            UnfallProjekt.erstellt_am.desc()
+                        ).limit(50).all()
+
+                        if projekte:
+                            projekt_options = {
+                                p.id: f"{p.aktenzeichen or p.projektnummer}"
+                                for p in projekte
+                            }
+                            ziel_projekt_id = st.selectbox(
+                                "Ziel-Akte",
+                                list(projekt_options.keys()),
+                                format_func=lambda x: projekt_options.get(x, ""),
+                                key="ramicro_ziel_projekt"
+                            )
+                        else:
+                            st.warning("Keine bestehenden Projekte")
+                            ziel_projekt_id = None
+
+                    elif import_option == "Aktenzeichen aus PDF verwenden":
+                        if ergebnis.aktenzeichen:
+                            st.info(f"Aktenzeichen: **{ergebnis.aktenzeichen}** wird verwendet")
+                            # Prüfen ob Akte existiert
+                            from src.models import UnfallProjekt
+
+                            existierende = db.query(UnfallProjekt).filter(
+                                UnfallProjekt.aktenzeichen == ergebnis.aktenzeichen
+                            ).first()
+
+                            if existierende:
+                                st.warning(f"Akte {ergebnis.aktenzeichen} existiert bereits (ID: {existierende.id})")
+                                ziel_projekt_id = existierende.id
+                            else:
+                                st.success("Neue Akte wird mit diesem Aktenzeichen erstellt")
+                                ziel_projekt_id = "NEU_MIT_AZ"
+                        else:
+                            st.error("Kein Aktenzeichen im PDF erkannt")
+                            ziel_projekt_id = None
+                    else:
+                        ziel_projekt_id = "NEU"
+                        st.info("Eine neue Akte wird erstellt")
+
+                # Import-Button
+                if st.button("🚀 Import starten", type="primary", use_container_width=True, key="ramicro_import_btn"):
+                    _execute_ramicro_import(db, ergebnis, ziel_projekt_id)
+
+
+def _execute_ramicro_import(db, ergebnis, ziel_projekt_id):
+    """Führt den RA-Micro Import durch"""
+    from src.models import UnfallProjekt, Dokument, DokumentTyp, KostenPosition, KostenKategorie
+    import os
+    import uuid
+
+    with st.spinner("Importiere RA-Micro Akte..."):
+        try:
+            user_id = st.session_state.get("user_id", 1)
+
+            # Projekt erstellen oder laden
+            if ziel_projekt_id == "NEU" or ziel_projekt_id == "NEU_MIT_AZ":
+                projektnummer = f"RM-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:4].upper()}"
+
+                projekt = UnfallProjekt(
+                    projektnummer=projektnummer,
+                    aktenzeichen=ergebnis.aktenzeichen,
+                    aktenzeichen_nummer=ergebnis.aktenzeichen_nummer,
+                    aktenzeichen_jahr=ergebnis.aktenzeichen_jahr,
+                    datum_unfall=datetime.combine(ergebnis.unfalldatum, datetime.min.time()) if ergebnis.unfalldatum else None,
+                    ort_unfall=ergebnis.unfallort,
+                    status="IN_BEARBEITUNG",
+                    angelegt_von_user_id=user_id
+                )
+                db.add(projekt)
+                db.flush()
+
+                st.success(f"Neue Akte erstellt: {projekt.aktenzeichen or projekt.projektnummer}")
+            else:
+                projekt = db.query(UnfallProjekt).filter(UnfallProjekt.id == ziel_projekt_id).first()
+                if not projekt:
+                    st.error("Ziel-Projekt nicht gefunden")
+                    return
+
+            # PDF speichern
+            pdf_bytes = st.session_state.get('ramicro_pdf_bytes')
+            filename = st.session_state.get('ramicro_filename', 'import.pdf')
+
+            if pdf_bytes:
+                upload_dir = f"uploads/{projekt.id}"
+                os.makedirs(upload_dir, exist_ok=True)
+
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                dateipfad = os.path.join(upload_dir, f"{timestamp}_{filename}")
+
+                with open(dateipfad, "wb") as f:
+                    f.write(pdf_bytes)
+
+                # Haupt-Dokument erstellen
+                haupt_dok = Dokument(
+                    unfallprojekt_id=projekt.id,
+                    hochgeladen_von_user_id=user_id,
+                    dokument_typ=DokumentTyp.SONSTIG,
+                    original_dateiname=filename,
+                    dateipfad=dateipfad,
+                    dateigroesse=len(pdf_bytes),
+                    storage_provider="local",
+                    storage_key=dateipfad,
+                    beschreibung="RA-Micro Aktenimport",
+                    status="HOCHGELADEN",
+                    freigabe_erforderlich=False,
+                    freigabe_erteilt=True
+                )
+                db.add(haupt_dok)
+
+            # Beteiligte als Notizen speichern (können später zu Users werden)
+            beteiligte_info = []
+            for bet in ergebnis.beteiligte:
+                info = {
+                    "typ": bet.typ.value,
+                    "name": f"{bet.vorname or ''} {bet.name or ''}".strip(),
+                    "firma": bet.firma,
+                    "adresse": f"{bet.strasse or ''}, {bet.plz or ''} {bet.ort or ''}".strip(", "),
+                    "email": bet.email,
+                    "telefon": bet.telefon,
+                    "kennzeichen": bet.kennzeichen,
+                    "versicherungsnummer": bet.versicherungsnummer
+                }
+                beteiligte_info.append(info)
+
+            # Kostenpositionen importieren (ohne Duplikate)
+            importierte_kosten = 0
+            kategorie_mapping = {
+                "REPARATUR": KostenKategorie.REPARATUR,
+                "GUTACHTEN": KostenKategorie.GUTACHTEN,
+                "MIETWAGEN": KostenKategorie.MIETWAGEN,
+                "NUTZUNGSAUSFALL": KostenKategorie.NUTZUNGSAUSFALL,
+                "WERTMINDERUNG": KostenKategorie.WERTMINDERUNG,
+                "ABSCHLEPPEN": KostenKategorie.ABSCHLEPPEN,
+                "KOSTENPAUSCHALE": KostenKategorie.KOSTENPAUSCHALE,
+            }
+
+            # Nur eindeutige Beträge importieren (Duplikate vermeiden)
+            gesehene_betraege = set()
+
+            for kp in ergebnis.kostenpositionen:
+                # Nur Beträge > 10€ und < 100.000€
+                if kp.betrag < 10 or kp.betrag > 100000:
+                    continue
+
+                # Duplikate vermeiden
+                if kp.betrag in gesehene_betraege:
+                    continue
+                gesehene_betraege.add(kp.betrag)
+
+                kategorie = kategorie_mapping.get(kp.kategorie, KostenKategorie.SONSTIG)
+
+                kosten_pos = KostenPosition(
+                    unfallprojekt_id=projekt.id,
+                    kategorie=kategorie,
+                    beschreibung=kp.beschreibung[:200] if kp.beschreibung else f"Import: {kp.kategorie}",
+                    betrag_brutto=kp.betrag,
+                    eingetragen_von_user_id=user_id
+                )
+                db.add(kosten_pos)
+                importierte_kosten += 1
+
+            db.commit()
+
+            # Session State leeren
+            for key in ['ramicro_ergebnis', 'ramicro_pdf_bytes', 'ramicro_filename']:
+                if key in st.session_state:
+                    del st.session_state[key]
+
+            st.success(f"""
+            ✅ **Import erfolgreich!**
+
+            - Akte: {projekt.aktenzeichen or projekt.projektnummer}
+            - {len(ergebnis.beteiligte)} Beteiligte erkannt
+            - {importierte_kosten} Kostenpositionen importiert
+            - {len(ergebnis.dokument_segmente)} Dokumentsegmente erkannt
+            """)
+
+            # Beteiligte anzeigen
+            if beteiligte_info:
+                with st.expander("📋 Erkannte Beteiligte (zur manuellen Anlage)"):
+                    for info in beteiligte_info:
+                        st.write(f"**{info['typ']}:** {info['firma'] or info['name']}")
+                        if info['email']:
+                            st.write(f"  E-Mail: {', '.join(info['email'])}")
+
+        except Exception as e:
+            db.rollback()
+            st.error(f"Fehler beim Import: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
 
 
 def _render_import_wizard():
