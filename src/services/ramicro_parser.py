@@ -195,6 +195,8 @@ def _extract_address(block: str) -> Tuple[Optional[str], Optional[str], Optional
             m2 = PLZ_CITY_RE.search(line)
             if m2:
                 plz, ort = m2.group(1), m2.group(2).strip()
+                # Bereinige Ort von nachfolgenden Wörtern wie "E-Mail", "Tel", "Fax"
+                ort = re.split(r'\s+(?:E-?Mail|Tel|Fax|Mobil)', ort, flags=re.IGNORECASE)[0].strip()
     return street, plz, ort
 
 
@@ -219,30 +221,72 @@ def _extract_name_from_block(block: str) -> Tuple[Optional[str], Optional[str], 
     name = None
     vorname = None
 
+    # Zeilen die keine Namen enthalten (überspringen)
+    skip_patterns = [
+        "adressnr", "tel", "fax", "e-mail", "email", "mobil", "iban",
+        "vers.-nr", "vers.nr", "schadennr", "schaden-nr", "aktenzeichen",
+        "sachbearbeiter", "az:", "az.", "plz", "straße", "str."
+    ]
+
+    # PLZ-Pattern zum Erkennen von Adresszeilen
+    plz_pattern = re.compile(r"^\d{5}\s")
+
     for line in lines:
+        line_lower = line.lower()
+
+        # Überspringe Labels und Kontaktdaten
+        if any(skip in line_lower for skip in skip_patterns):
+            continue
+
+        # Überspringe Adresszeilen (beginnen mit PLZ)
+        if plz_pattern.match(line):
+            continue
+
+        # Überspringe reine Zahlenzeilen
+        if re.match(r'^[\d\s/\-\.]+$', line):
+            continue
+
         # Firma-Keywords
-        if any(kw in line for kw in ["GmbH", "mbH", "AG", "KG", "OHG", "e.K.", "UG"]):
+        if any(kw in line for kw in ["GmbH", "mbH", "AG", "KG", "OHG", "e.K.", "UG", "e.V.", "SE"]):
             firma = line.split(" Tel")[0].split(" Fax")[0].strip(" :")
             continue
 
         # Normale Namen (Nachname, Vorname oder Vorname Nachname)
-        if len(line) >= 3 and not line.lower().startswith(("adressnr", "tel", "fax", "e-mail", "email", "mobil")):
-            clean = line.split(" Tel")[0].split(" Fax")[0].strip(" :")
+        if len(line) >= 3:
+            # Bereinige die Zeile
+            clean = line.split(" Tel")[0].split(" Fax")[0].split(" E-Mail")[0].strip(" :")
+
+            # Entferne Label am Anfang (z.B. "GEGNER: Name")
+            for label in ["GEGNER:", "GEGNER", "AUFTRAGGEBER:", "AUFTRAGGEBER",
+                         "MANDANT:", "MANDANT", "UNFALLGEGNER:", "UNFALLGEGNER"]:
+                if clean.upper().startswith(label):
+                    clean = clean[len(label):].strip()
+                    break
+
+            if not clean or len(clean) < 2:
+                continue
+
             if "," in clean:
                 parts = clean.split(",")
                 name = parts[0].strip()
                 vorname = parts[1].strip() if len(parts) > 1 else None
             elif " " in clean and not firma:
                 parts = clean.split()
+                # Filtere Zahlen und kurze Teile
+                parts = [p for p in parts if len(p) > 1 and not p.isdigit()]
                 if len(parts) == 2:
                     vorname = parts[0]
                     name = parts[1]
                 elif len(parts) > 2:
                     vorname = parts[0]
                     name = " ".join(parts[1:])
-            elif not name:
+                elif len(parts) == 1:
+                    name = parts[0]
+            elif not name and len(clean) > 2:
                 name = clean
-            break
+
+            if name:
+                break
 
     return name, vorname, firma
 
@@ -491,7 +535,8 @@ class RAMicroParser:
                 cover_text,
                 label,
                 end_labels=["GEGNERVERTRETER:", "GEGNER:", "VERSICHERUNG:", "UNFALLGEGNER:",
-                           "SCHÄDIGER:", "SCHAEDIGER:", "BEKLAGTER:", "ANTRAGSGEGNER:"]
+                           "SCHÄDIGER:", "SCHAEDIGER:", "BEKLAGTER:", "ANTRAGSGEGNER:",
+                           "SACHVERSTÄNDIGER:", "GUTACHTER:"]
             )
             if mandant_block and len(mandant_block) > 20:
                 break
@@ -516,7 +561,8 @@ class RAMicroParser:
                 label,
                 end_labels=["GEGNERVERTRETER:", "GEGENSTANDSWERT:", "VERSICHERUNG:",
                            "RECHTSSCHUTZ:", "TERMINE:", "FRISTEN:", "HAFTPFLICHT:",
-                           "GEGNERISCHE VERSICHERUNG:", "KFZHAFTPFLICHT:"]
+                           "GEGNERISCHE VERSICHERUNG:", "KFZHAFTPFLICHT:",
+                           "SACHVERSTÄNDIGER:", "GUTACHTER:"]
             )
             if gegner_block and len(gegner_block) > 10:
                 break
@@ -526,30 +572,111 @@ class RAMicroParser:
             if beteiligter:
                 ergebnis.beteiligte.append(beteiligter)
 
-        # Verschiedene Label-Varianten für Versicherung
-        vers_labels = [
-            "VERSICHERUNG:", "VERSICHERUNG", "GEGNERISCHE VERSICHERUNG:",
+        # HAFTPFLICHT-Versicherung (gegnerische) - PRIORITÄT vor allgemeiner Versicherung
+        haftpflicht_labels = [
             "HAFTPFLICHTVERSICHERUNG:", "HAFTPFLICHT:", "KFZ-HAFTPFLICHT:",
-            "KFZHAFTPFLICHT:", "VERS.:", "VERS:"
+            "KFZHAFTPFLICHT:", "GEGNERISCHE VERSICHERUNG:", "KFZ HAFTPFLICHT:"
         ]
 
-        vers_block = None
-        for label in vers_labels:
-            vers_block = _extract_block(
+        haftpflicht_block = None
+        for label in haftpflicht_labels:
+            haftpflicht_block = _extract_block(
                 cover_text,
                 label,
-                end_labels=["RECHTSSCHUTZ:", "TERMINE:", "FRISTEN:", "GEGENSTANDSWERT:",
-                           "SACHBEARBEITER:", "SCHADENNUMMER:", "AKTENZEICHEN:"]
+                end_labels=["RECHTSSCHUTZ:", "RSV:", "TERMINE:", "FRISTEN:", "GEGENSTANDSWERT:",
+                           "SACHBEARBEITER:", "SCHADENNUMMER:", "AKTENZEICHEN:",
+                           "SACHVERSTÄNDIGER:", "GUTACHTER:"]
             )
-            if vers_block and len(vers_block) > 10:
+            if haftpflicht_block and len(haftpflicht_block) > 10:
                 break
 
-        if vers_block:
-            beteiligter = self._parse_party_block(vers_block, BeteiligterTyp.VERSICHERUNG_GEGNER)
+        if haftpflicht_block:
+            beteiligter = self._parse_party_block(haftpflicht_block, BeteiligterTyp.VERSICHERUNG_GEGNER)
             if beteiligter:
                 ergebnis.beteiligte.append(beteiligter)
 
-        # Fallback: Suche nach bekannten Versicherungsnamen im Text
+        # Falls keine Haftpflicht gefunden: Allgemeine "VERSICHERUNG" suchen (aber RSV ausschließen)
+        if not any(b.typ == BeteiligterTyp.VERSICHERUNG_GEGNER for b in ergebnis.beteiligte):
+            vers_labels = ["VERSICHERUNG:", "VERSICHERUNG", "VERS.:", "VERS:"]
+
+            vers_block = None
+            for label in vers_labels:
+                vers_block = _extract_block(
+                    cover_text,
+                    label,
+                    end_labels=["RECHTSSCHUTZ:", "RSV:", "TERMINE:", "FRISTEN:", "GEGENSTANDSWERT:",
+                               "SACHBEARBEITER:", "SCHADENNUMMER:", "AKTENZEICHEN:",
+                               "SACHVERSTÄNDIGER:", "GUTACHTER:"]
+                )
+                if vers_block and len(vers_block) > 10:
+                    # Prüfen ob es sich um RSV handelt (dann überspringen)
+                    vers_lower = vers_block.lower()
+                    if "rechtsschutz" in vers_lower or "rsv" in vers_lower:
+                        vers_block = None
+                        continue
+                    break
+
+            if vers_block:
+                beteiligter = self._parse_party_block(vers_block, BeteiligterTyp.VERSICHERUNG_GEGNER)
+                if beteiligter:
+                    ergebnis.beteiligte.append(beteiligter)
+
+        # RECHTSSCHUTZ-Versicherung (eigene) - separat erfassen
+        rsv_labels = [
+            "RECHTSSCHUTZ:", "RSV:", "RECHTSSCHUTZVERSICHERUNG:",
+            "RS-VERSICHERUNG:", "EIGENE VERSICHERUNG:"
+        ]
+
+        rsv_block = None
+        for label in rsv_labels:
+            rsv_block = _extract_block(
+                cover_text,
+                label,
+                end_labels=["TERMINE:", "FRISTEN:", "GEGENSTANDSWERT:", "SACHBEARBEITER:",
+                           "SACHVERSTÄNDIGER:", "GUTACHTER:", "HAFTPFLICHT:"]
+            )
+            if rsv_block and len(rsv_block) > 10:
+                break
+
+        if rsv_block:
+            beteiligter = self._parse_party_block(rsv_block, BeteiligterTyp.VERSICHERUNG_EIGEN)
+            if beteiligter:
+                ergebnis.beteiligte.append(beteiligter)
+
+        # SACHVERSTÄNDIGER / GUTACHTER erkennen
+        gutachter_labels = [
+            "SACHVERSTÄNDIGER:", "SACHVERSTAENDIGER:", "GUTACHTER:",
+            "KFZ-SACHVERSTÄNDIGER:", "KFZ-GUTACHTER:", "SV:"
+        ]
+
+        gutachter_block = None
+        for label in gutachter_labels:
+            gutachter_block = _extract_block(
+                cover_text,
+                label,
+                end_labels=["TERMINE:", "FRISTEN:", "GEGENSTANDSWERT:", "VERSICHERUNG:",
+                           "RECHTSSCHUTZ:", "HAFTPFLICHT:", "WERKSTATT:"]
+            )
+            if gutachter_block and len(gutachter_block) > 10:
+                break
+
+        if gutachter_block:
+            beteiligter = self._parse_party_block(gutachter_block, BeteiligterTyp.GUTACHTER)
+            if beteiligter:
+                ergebnis.beteiligte.append(beteiligter)
+
+        # Fallback: Bekannte Gutachter/Sachverständige im Text suchen
+        if not any(b.typ == BeteiligterTyp.GUTACHTER for b in ergebnis.beteiligte):
+            gutachter = self._find_gutachter_names(cover_text)
+            if gutachter:
+                for sv_name in gutachter[:1]:  # Nur ersten gefundenen
+                    ergebnis.beteiligte.append(Beteiligter(
+                        typ=BeteiligterTyp.GUTACHTER,
+                        firma=sv_name,
+                        raw_text=sv_name
+                    ))
+
+        # Fallback: Suche nach bekannten Versicherungsnamen im Text (nur Haftpflicht)
         if not any(b.typ == BeteiligterTyp.VERSICHERUNG_GEGNER for b in ergebnis.beteiligte):
             versicherungen = self._find_insurance_names(cover_text)
             if versicherungen:
@@ -582,6 +709,33 @@ class RAMicroParser:
                     gefunden.append(match.group(1).strip())
                 else:
                     gefunden.append(vers)
+
+        return gefunden
+
+    def _find_gutachter_names(self, text: str) -> List[str]:
+        """Sucht nach bekannten Gutachter-/Sachverständigen-Organisationen im Text"""
+        bekannte_gutachter = [
+            "TÜV Nord", "TÜV Süd", "TÜV Rheinland", "TÜV Hessen", "TÜV Thüringen",
+            "TÜV NORD", "TÜV SÜD", "DEKRA", "GTÜ", "KÜS", "FSP",
+            "Sachverständigenbüro", "KFZ-Sachverständiger", "Kfz-Gutachter",
+            "Control Expert", "Eucon", "Audatex"
+        ]
+
+        gefunden = []
+        text_upper = text.upper()
+
+        for gutachter in bekannte_gutachter:
+            if gutachter.upper() in text_upper:
+                # Versuche vollständigen Namen zu finden
+                pattern = re.compile(
+                    rf"({re.escape(gutachter)}[A-Za-zÄÖÜäöüß\s\-]*(?:GmbH|AG|e\.V\.)?)",
+                    re.IGNORECASE
+                )
+                match = pattern.search(text)
+                if match:
+                    gefunden.append(match.group(1).strip())
+                else:
+                    gefunden.append(gutachter)
 
         return gefunden
 
