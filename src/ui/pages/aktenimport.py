@@ -12,6 +12,76 @@ from src.services.aktenimport import (
 )
 
 
+def _speichere_training_korrektur(ergebnis, beteiligte_typen):
+    """Speichert die korrigierten Daten als Trainingsbeispiel"""
+    from src.services.ramicro_training import get_training_manager, TrainingBeispiel
+
+    try:
+        manager = get_training_manager()
+
+        # Sammle korrigierte Daten aus Session State
+        korrigierte_daten = {}
+        for typ_value, typ_label, key_prefix in beteiligte_typen:
+            korrigierte_daten[key_prefix] = {
+                "firma": st.session_state.get(f"{key_prefix}_firma", ""),
+                "name": st.session_state.get(f"{key_prefix}_name", ""),
+                "vorname": st.session_state.get(f"{key_prefix}_vorname", ""),
+                "strasse": st.session_state.get(f"{key_prefix}_strasse", ""),
+                "plz": st.session_state.get(f"{key_prefix}_plz", ""),
+                "ort": st.session_state.get(f"{key_prefix}_ort", ""),
+                "telefon": st.session_state.get(f"{key_prefix}_telefon", ""),
+                "email": st.session_state.get(f"{key_prefix}_email", ""),
+            }
+
+        # Original-Extraktion für Vergleich speichern
+        original_extraktion = {}
+        for bet in ergebnis.beteiligte:
+            typ_key = {
+                "MANDANT": "mandant",
+                "UNFALLGEGNER": "gegner",
+                "VERSICHERUNG_GEGNER": "versicherung_gegner",
+                "VERSICHERUNG_EIGEN": "rechtsschutz",
+                "GUTACHTER": "gutachter"
+            }.get(bet.typ.value)
+            if typ_key:
+                original_extraktion[typ_key] = {
+                    "firma": bet.firma or "",
+                    "name": bet.name or "",
+                    "vorname": bet.vorname or "",
+                    "strasse": bet.strasse or "",
+                    "plz": bet.plz or "",
+                    "ort": bet.ort or "",
+                    "telefon": ", ".join(bet.telefon) if bet.telefon else "",
+                    "email": ", ".join(bet.email) if bet.email else "",
+                    "raw_text": bet.raw_text or ""
+                }
+
+        # Trainingsbeispiel erstellen
+        beispiel = TrainingBeispiel(
+            id=f"train_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            erstellt_am=datetime.now(),
+            aktenvorblatt_text=ergebnis.raw_cover_text or "",
+            mandant=korrigierte_daten.get("mandant", {}),
+            gegner=korrigierte_daten.get("gegner", {}),
+            versicherung_gegner=korrigierte_daten.get("versicherung_gegner", {}),
+            versicherung_eigen=korrigierte_daten.get("rechtsschutz", {}),
+            rechtsschutz=korrigierte_daten.get("rechtsschutz", {}),
+            gutachter=korrigierte_daten.get("gutachter", {}),
+            aktenzeichen=ergebnis.aktenzeichen,
+            kurzbezeichnung=ergebnis.kurzbezeichnung,
+            ist_korrektur=True,
+            original_extraktion=original_extraktion
+        )
+
+        manager.speichere_beispiel(beispiel)
+
+        st.success("✅ Korrekturen wurden gespeichert! Das System lernt aus Ihren Eingaben.")
+        st.info(f"Trainingsbeispiel-ID: {beispiel.id}")
+
+    except Exception as e:
+        st.error(f"Fehler beim Speichern: {str(e)}")
+
+
 def _render_inhaltsverzeichnis_baum(inhaltsverzeichnis: list, anzahl_seiten: int = 0):
     """Rendert das Inhaltsverzeichnis als grafischen Baum"""
     if not inhaltsverzeichnis:
@@ -252,35 +322,100 @@ def _render_ramicro_import():
                         if ergebnis.unfallort:
                             st.write(f"**Unfallort:** {ergebnis.unfallort}")
 
-                # Beteiligte
-                if ergebnis.beteiligte:
-                    st.markdown("#### Erkannte Beteiligte")
+                # Beteiligte - EDITIERBARE VERSION
+                st.markdown("#### Erkannte Beteiligte (editierbar)")
+                st.caption("Korrigieren Sie fehlerhafte Daten - Ihre Korrekturen werden für zukünftige Importe gelernt.")
 
-                    for bet in ergebnis.beteiligte:
-                        with st.expander(f"👤 {bet.typ.value}: {bet.firma or bet.name or 'Unbekannt'}"):
-                            col1, col2 = st.columns(2)
+                # Initialisiere editierte Daten in Session State
+                if 'ramicro_editiert' not in st.session_state:
+                    st.session_state['ramicro_editiert'] = {}
 
-                            with col1:
-                                if bet.firma:
-                                    st.write(f"**Firma:** {bet.firma}")
-                                if bet.name:
-                                    st.write(f"**Name:** {bet.vorname or ''} {bet.name}")
-                                if bet.strasse:
-                                    st.write(f"**Adresse:** {bet.strasse}")
-                                if bet.plz and bet.ort:
-                                    st.write(f"**PLZ/Ort:** {bet.plz} {bet.ort}")
+                # Definiere die erwarteten Beteiligten-Typen
+                beteiligte_typen = [
+                    ("MANDANT", "👤 Mandant/Auftraggeber", "mandant"),
+                    ("UNFALLGEGNER", "🚗 Gegner", "gegner"),
+                    ("VERSICHERUNG_GEGNER", "🏢 Haftpflichtversicherung (Gegner)", "versicherung_gegner"),
+                    ("VERSICHERUNG_EIGEN", "🏠 Rechtsschutzversicherung (Eigen)", "rechtsschutz"),
+                    ("GUTACHTER", "📋 Sachverständiger/Gutachter", "gutachter"),
+                ]
 
-                            with col2:
-                                if bet.telefon:
-                                    st.write(f"**Telefon:** {', '.join(bet.telefon)}")
-                                if bet.email:
-                                    st.write(f"**E-Mail:** {', '.join(bet.email)}")
-                                if bet.kennzeichen:
-                                    st.write(f"**Kennzeichen:** {bet.kennzeichen}")
-                                if bet.versicherungsnummer:
-                                    st.write(f"**Vers.-Nr.:** {bet.versicherungsnummer}")
-                                if bet.iban:
-                                    st.write(f"**IBAN:** {bet.iban}")
+                # Erstelle Dict der erkannten Beteiligten nach Typ
+                erkannte_nach_typ = {}
+                for bet in ergebnis.beteiligte:
+                    erkannte_nach_typ[bet.typ.value] = bet
+
+                for typ_value, typ_label, key_prefix in beteiligte_typen:
+                    bet = erkannte_nach_typ.get(typ_value)
+
+                    with st.expander(f"{typ_label}: {(bet.firma or bet.name if bet else 'Nicht erkannt') or 'Nicht erkannt'}", expanded=(bet is not None)):
+                        col_edit, col_source = st.columns([2, 1])
+
+                        with col_edit:
+                            # Editierbare Felder
+                            firma_key = f"{key_prefix}_firma"
+                            name_key = f"{key_prefix}_name"
+                            vorname_key = f"{key_prefix}_vorname"
+                            strasse_key = f"{key_prefix}_strasse"
+                            plz_key = f"{key_prefix}_plz"
+                            ort_key = f"{key_prefix}_ort"
+                            telefon_key = f"{key_prefix}_telefon"
+                            email_key = f"{key_prefix}_email"
+
+                            # Werte aus erkannten Daten oder leer
+                            default_firma = bet.firma if bet else ""
+                            default_name = bet.name if bet else ""
+                            default_vorname = bet.vorname if bet else ""
+                            default_strasse = bet.strasse if bet else ""
+                            default_plz = bet.plz if bet else ""
+                            default_ort = bet.ort if bet else ""
+                            default_telefon = ", ".join(bet.telefon) if bet and bet.telefon else ""
+                            default_email = ", ".join(bet.email) if bet and bet.email else ""
+
+                            st.text_input("Firma/Organisation", value=default_firma, key=firma_key)
+
+                            col_v, col_n = st.columns(2)
+                            with col_v:
+                                st.text_input("Vorname", value=default_vorname, key=vorname_key)
+                            with col_n:
+                                st.text_input("Nachname", value=default_name, key=name_key)
+
+                            st.text_input("Straße", value=default_strasse, key=strasse_key)
+
+                            col_p, col_o = st.columns([1, 2])
+                            with col_p:
+                                st.text_input("PLZ", value=default_plz, key=plz_key)
+                            with col_o:
+                                st.text_input("Ort", value=default_ort, key=ort_key)
+
+                            col_t, col_e = st.columns(2)
+                            with col_t:
+                                st.text_input("Telefon", value=default_telefon, key=telefon_key)
+                            with col_e:
+                                st.text_input("E-Mail", value=default_email, key=email_key)
+
+                        with col_source:
+                            st.markdown("**Quelltext:**")
+                            if bet and bet.raw_text:
+                                st.code(bet.raw_text[:500], language=None)
+                            else:
+                                st.info("Keine Daten im Aktenvorblatt gefunden")
+
+                            if not bet:
+                                st.warning("Bitte Daten manuell eingeben")
+
+                # Quelltext-Anzeige (Aktenvorblatt)
+                if ergebnis.raw_cover_text:
+                    with st.expander("📄 Kompletter Aktenvorblatt-Text (für Debugging)"):
+                        st.code(ergebnis.raw_cover_text, language=None)
+
+                # Korrektur speichern Button
+                st.markdown("---")
+                col_save, col_info = st.columns([1, 2])
+                with col_save:
+                    if st.button("💾 Korrekturen speichern (für KI-Lernen)", type="secondary", use_container_width=True):
+                        _speichere_training_korrektur(ergebnis, beteiligte_typen)
+                with col_info:
+                    st.caption("Ihre Korrekturen werden gespeichert und helfen dem System, zukünftige Importe besser zu erkennen.")
 
                 # Dokumentstruktur
                 if ergebnis.dokument_segmente:

@@ -311,15 +311,24 @@ def _extract_name_from_block(block: str) -> Tuple[Optional[str], Optional[str], 
 class RAMicroParser:
     """Parser für RA-Micro Aktengestalter PDFs"""
 
-    def __init__(self, enable_ocr: bool = False, ocr_dpi: int = 300):
+    def __init__(self, enable_ocr: bool = False, ocr_dpi: int = 300, use_training: bool = True):
         self.enable_ocr = enable_ocr
         self.ocr_dpi = ocr_dpi
+        self.use_training = use_training
         self._pytesseract = None
+        self._training_manager = None
 
         if enable_ocr:
             try:
                 import pytesseract
                 self._pytesseract = pytesseract
+            except ImportError:
+                pass
+
+        if use_training:
+            try:
+                from src.services.ramicro_training import get_training_manager
+                self._training_manager = get_training_manager()
             except ImportError:
                 pass
 
@@ -493,6 +502,58 @@ class RAMicroParser:
 
         return None
 
+    def _apply_training_data(self, cover_text: str, ergebnis: RAMicroAkteErgebnis) -> bool:
+        """
+        Versucht, Trainingsbeispiele anzuwenden um die Erkennung zu verbessern.
+        Gibt True zurück wenn ein passendes Beispiel gefunden wurde.
+        """
+        if not self._training_manager:
+            return False
+
+        # Suche nach ähnlichem Trainingsbeispiel
+        beispiel = self._training_manager.finde_aehnliches_beispiel(cover_text)
+
+        if not beispiel or not beispiel.ist_korrektur:
+            return False
+
+        # Wende gelernte Daten an
+        typ_mapping = {
+            "mandant": BeteiligterTyp.MANDANT,
+            "gegner": BeteiligterTyp.UNFALLGEGNER,
+            "versicherung_gegner": BeteiligterTyp.VERSICHERUNG_GEGNER,
+            "rechtsschutz": BeteiligterTyp.VERSICHERUNG_EIGEN,
+            "gutachter": BeteiligterTyp.GUTACHTER,
+        }
+
+        for key, typ in typ_mapping.items():
+            daten = getattr(beispiel, key, None)
+            if daten and isinstance(daten, dict):
+                # Prüfe ob sinnvolle Daten vorhanden
+                firma = daten.get("firma", "")
+                name = daten.get("name", "")
+
+                if firma or name:
+                    # Versuche, die Daten im aktuellen Text zu finden
+                    # und erstelle entsprechenden Beteiligten
+                    telefon_list = [t.strip() for t in daten.get("telefon", "").split(",") if t.strip()]
+                    email_list = [e.strip() for e in daten.get("email", "").split(",") if e.strip()]
+
+                    beteiligter = Beteiligter(
+                        typ=typ,
+                        firma=firma if firma else None,
+                        name=name if name else None,
+                        vorname=daten.get("vorname") or None,
+                        strasse=daten.get("strasse") or None,
+                        plz=daten.get("plz") or None,
+                        ort=daten.get("ort") or None,
+                        telefon=telefon_list,
+                        email=email_list,
+                        raw_text=f"(aus Training: {beispiel.id})"
+                    )
+                    ergebnis.beteiligte.append(beteiligter)
+
+        return len(ergebnis.beteiligte) > 0
+
     def _parse_cover_page(self, cover_text: str, ergebnis: RAMicroAkteErgebnis):
         """Parst das Aktenvorblatt"""
 
@@ -508,8 +569,8 @@ class RAMicroParser:
         if ergebnis.aktenzeichen:
             self._parse_aktenzeichen(ergebnis.aktenzeichen, ergebnis)
 
-        # Kurzbezeichnung
-        m3 = re.search(r"\b(.+?\./\.\s*.+?)\b", cover_text)
+        # Kurzbezeichnung - verbessert für ./. Format
+        m3 = re.search(r"([A-Za-zÄÖÜäöüß\s]+\s*\./\.\s*[A-Za-zÄÖÜäöüß\s]+)", cover_text)
         if m3:
             ergebnis.kurzbezeichnung = m3.group(1).strip()
 
@@ -521,7 +582,12 @@ class RAMicroParser:
             except ValueError:
                 pass
 
-        # Beteiligte extrahieren
+        # Versuche zuerst Trainingsbeispiele anzuwenden
+        if self._apply_training_data(cover_text, ergebnis):
+            # Erfolgreich aus Training gelernt - überspringe Standard-Extraktion
+            return
+
+        # Beteiligte extrahieren (Standard-Methode)
         self._extract_parties(cover_text, ergebnis)
 
     def _parse_aktenzeichen(self, az: str, ergebnis: RAMicroAkteErgebnis):
